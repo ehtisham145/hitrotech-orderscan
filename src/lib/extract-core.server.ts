@@ -301,7 +301,20 @@ async function runExtractionUnguarded(supabase: SB, extractionId: string): Promi
     }
 
     try {
-      await supabase.from("extractions").update({ status: "processing", error_message: "Calling OCR service...", updated_at: nowIso() }).eq("id", extractionId);
+      const { data: claimed, error: claimErr } = await supabase
+        .from("extractions")
+        .update({ status: "processing", error_message: "Calling OCR service...", updated_at: nowIso() })
+        .eq("id", extractionId)
+        .select("id");
+
+      // Nothing below is worth doing if this caller cannot actually write to the
+      // row: the work would run, produce a result, and then be dropped on the
+      // floor by the same silent no-op, over and over.
+      if (claimErr || !claimed?.length) {
+        throw new Error(
+          `Could not mark extraction as processing: ${claimErr?.message ?? "no rows matched — check update permissions for this caller"}`,
+        );
+      }
 
       const { data: imgData, error: downloadErr } = await supabase.storage
         .from("screenshots")
@@ -344,11 +357,20 @@ async function runExtractionUnguarded(supabase: SB, extractionId: string): Promi
       }
 
       // Save OCR text for future use/retries
-      await supabase.from("extractions").update({
+      const { data: savedRows, error: saveErr } = await supabase.from("extractions").update({
         ocr_text: ocrText,
         status: "ocr_completed",
         updated_at: nowIso(),
-      } as any).eq("id", extraction.id);
+      } as any).eq("id", extraction.id).select("id");
+
+      // A write that changes nothing leaves the row exactly where it started, so
+      // the next pass redoes the OCR we just paid for — and does so silently
+      // unless the result is actually inspected.
+      if (saveErr || !savedRows?.length) {
+        throw new Error(
+          `Could not persist OCR text (row not updated): ${saveErr?.message ?? "no rows matched — check update permissions for this caller"}`,
+        );
+      }
 
     } catch (err: any) {
       console.error("[extract-core] OCR step failed:", err.message, "| cause:", err.cause);
