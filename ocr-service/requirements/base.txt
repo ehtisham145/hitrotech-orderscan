@@ -3,7 +3,11 @@ fastapi==0.115.6
 uvicorn[standard]==0.34.0
 python-multipart==0.0.20
 pydantic==2.10.4
-paddlepaddle==3.0.0
+# paddleocr 2.9.x targets the paddlepaddle 2.x runtime. Paired with 3.0.0 a
+# single dense page peaked at ~5.9GB resident — enough to be OOM-killed inside
+# a 6GB container — while repeat runs of the same page stayed flat, pointing at
+# per-shape allocations that release differently across that major version.
+paddlepaddle==2.6.2
 paddleocr==2.9.1
 opencv-python-headless==4.10.0.84
 pillow==11.0.0
