@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import hmac
 import logging
@@ -10,7 +11,7 @@ import requests
 from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 
-from .preprocess import preprocess
+from .preprocess import ImageTooLarge, preprocess
 
 if os.environ.get("LOG_FORMAT") == "json":
     from pythonjsonlogger import jsonlogger
@@ -33,6 +34,12 @@ EAGER_LOAD = os.environ.get("OCR_EAGER_LOAD", "true").lower() not in ("0", "fals
 app = FastAPI(title="OrderScan OCR", version="1.0.0")
 
 _engine: Any = None
+
+# One inference at a time. A single dense page allocates on the order of
+# gigabytes, so two overlapping passes on a small host is an OOM kill rather
+# than two slower responses — and a queued request that waits is strictly
+# better than a worker that dies mid-request.
+_inference_slot = asyncio.Semaphore(int(os.environ.get("OCR_MAX_CONCURRENCY", "1")))
 
 
 def get_engine() -> Any:
@@ -110,16 +117,24 @@ async def _run_ocr(image_bytes: bytes) -> OcrResponse:
         raise HTTPException(status_code=413, detail="Image exceeds size limit")
 
     started = time.perf_counter()
+
+    # Decoding, filtering and inference are all blocking CPU work. Left on the
+    # event loop they stall everything else this worker serves for the length of
+    # the request — including /health, whose probe times out well inside a normal
+    # OCR pass and reports the container unhealthy while it is simply busy.
     try:
-        img = preprocess(image_bytes)
+        img = await asyncio.to_thread(preprocess, image_bytes)
+    except ImageTooLarge as err:
+        raise HTTPException(status_code=413, detail=str(err)) from err
     except ValueError as err:
         raise HTTPException(status_code=400, detail=str(err)) from err
 
-    try:
-        raw = get_engine().ocr(np.asarray(img), cls=True)
-    except Exception as err:  # noqa: BLE001
-        logger.exception("PaddleOCR failed")
-        raise HTTPException(status_code=502, detail=f"OCR engine error: {err}") from err
+    async with _inference_slot:
+        try:
+            raw = await asyncio.to_thread(lambda: get_engine().ocr(np.asarray(img), cls=True))
+        except Exception as err:  # noqa: BLE001
+            logger.exception("PaddleOCR failed")
+            raise HTTPException(status_code=502, detail=f"OCR engine error: {err}") from err
 
     lines: list[OcrLine] = []
     for page in raw or []:

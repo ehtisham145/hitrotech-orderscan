@@ -10,6 +10,9 @@ services:
       - .env
     ports:
       - "${APP_PORT:-3000}:8080"
+    networks:
+      - default
+      - orderscan-net
     mem_limit: ${APP_MEMORY_LIMIT:-2g}
     cpus: ${APP_CPU_LIMIT:-2}
     healthcheck:
@@ -54,3 +57,11 @@ services:
 volumes:
   certbot-etc:
   certbot-www:
+
+networks:
+  # Shared with ocr-service/docker-compose.prod.yml so this app can reach it as
+  # http://ocr:8080 internally. ops/deploy.sh creates it if it does not exist,
+  # so the app still comes up on a host where ocr-service was never deployed —
+  # extraction falls back to reading the screenshot directly.
+  orderscan-net:
+    external: true

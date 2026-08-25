@@ -228,10 +228,68 @@ const HEARTBEAT_INTERVAL_MS = 30_000;
 // failure instead of holding the row open indefinitely.
 const AI_TIMEOUT_MS = Number(process.env.AI_TIMEOUT_MS) || 90_000;
 
+// Same, for the OCR service. Shorter than the AI budget: OCR is the optional
+// half of the read, and time spent waiting on it delays a fallback that would
+// have answered already.
+const OCR_TIMEOUT_MS = Number(process.env.OCR_TIMEOUT_MS) || 45_000;
+
 // Screenshots are sent inline as base64, which costs roughly a third more than
 // the raw bytes. Uploads this large are a sign something other than a phone
 // screenshot got through, and are worth rejecting before paying to send them.
 const MAX_IMAGE_BYTES = Number(process.env.MAX_IMAGE_BYTES) || 12 * 1024 * 1024;
+
+/**
+ * Transcribes a screenshot with the OCR service, or returns null if it cannot.
+ *
+ * Every failure here is non-fatal by design: the caller falls back to handing
+ * the screenshot to the model directly. Losing OCR costs accuracy on the field
+ * layout, not the extraction itself, so it is never worth failing a row over.
+ */
+async function readWithOcr(
+  bytes: Buffer,
+  mimeType: string,
+  fileName: string | null,
+): Promise<string | null> {
+  const ocrUrl = process.env.OCR_URL;
+  const ocrApiKey = process.env.OCR_API_KEY;
+  if (!ocrUrl) return null;
+
+  const target = `${ocrUrl.replace(/\/+$/, "")}/ocr/upload`;
+  const startedAt = Date.now();
+
+  try {
+    const formData = new FormData();
+    formData.append(
+      "file",
+      new Blob([new Uint8Array(bytes)], { type: mimeType }),
+      fileName || "image.png",
+    );
+
+    const res = await fetch(target, {
+      method: "POST",
+      headers: ocrApiKey ? { "X-API-Key": ocrApiKey } : {},
+      body: formData,
+      // Without a deadline a stalled worker holds the row open indefinitely.
+      signal: AbortSignal.timeout(OCR_TIMEOUT_MS),
+    });
+
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      throw new Error(`${res.status}: ${body.slice(0, 200)}`);
+    }
+
+    const text = ((await res.json())?.text ?? "").trim();
+    if (!text) throw new Error("returned no text");
+
+    console.log(`[extract-core] OCR read ${text.length} chars in ${Date.now() - startedAt}ms`);
+    return text;
+  } catch (err: any) {
+    console.warn(
+      `[extract-core] OCR unavailable after ${Date.now() - startedAt}ms (${err.message}) — sending the screenshot to the model instead`,
+    );
+    return null;
+  }
+}
 
 /**
  * Runs an extraction, keeping the row's updated_at fresh for as long as the work
@@ -284,11 +342,13 @@ async function runExtractionUnguarded(supabase: SB, extractionId: string): Promi
 
   if (fetchErr || !extraction) return { ok: false, error: "not_found" };
 
-  // The model reads the screenshot itself rather than a transcript of it: laid-out
-  // receipts lose meaning once flattened to a line of text, and a separate OCR
-  // pass was both the slowest step and the one that had to be sized and kept
-  // alive for its own sake.
+  // OCR is the primary reader. When it cannot answer, the screenshot goes to the
+  // model directly rather than the row failing: the OCR service runs inference
+  // that costs gigabytes per page, so on a small host it is the part most likely
+  // to be unavailable, and a transcript is not the only way to read a receipt.
   let imageDataUrl: string;
+  let mimeType = "image/png";
+  let imageBytes: Buffer;
 
   try {
     const { data: claimed, error: claimErr } = await supabase
@@ -319,9 +379,9 @@ async function runExtractionUnguarded(supabase: SB, extractionId: string): Promi
       throw new Error(`Image is ${Math.round(bytes.length / 1024 / 1024)}MB, over the ${MAX_IMAGE_BYTES / 1024 / 1024}MB limit`);
     }
 
-    const mime = imgData.type || "image/png";
-    imageDataUrl = `data:${mime};base64,${bytes.toString("base64")}`;
-    console.log(`[extract-core] Sending screenshot to AI (bytes=${bytes.length}, type=${mime})`);
+    imageBytes = bytes;
+    mimeType = imgData.type || "image/png";
+    imageDataUrl = `data:${mimeType};base64,${bytes.toString("base64")}`;
   } catch (err: any) {
     console.error("[extract-core] Could not read screenshot:", err.message, "| cause:", err.cause);
     await supabase.from("extractions").update({
@@ -333,16 +393,28 @@ async function runExtractionUnguarded(supabase: SB, extractionId: string): Promi
     return { ok: false, error: "image_unavailable" };
   }
 
-  const userContent = [
-    {
-      type: "text" as const,
-      text: "Extract all telecom order fields from this order screenshot. Return JSON only.",
-    },
-    {
-      type: "image_url" as const,
-      image_url: { url: imageDataUrl },
-    },
-  ];
+  const ocrText = await readWithOcr(imageBytes, mimeType, extraction.file_name);
+
+  const userContent = ocrText
+    ? [
+        {
+          type: "text" as const,
+          text: `Extract all telecom order fields from the OCR text below. Return JSON only.
+===== OCR TEXT =====
+${ocrText}
+===== END OCR TEXT =====`,
+        },
+      ]
+    : [
+        {
+          type: "text" as const,
+          text: "Extract all telecom order fields from this order screenshot. Return JSON only.",
+        },
+        {
+          type: "image_url" as const,
+          image_url: { url: imageDataUrl },
+        },
+      ];
 
   const messages = [
     { role: "system", content: SYSTEM_PROMPT },
