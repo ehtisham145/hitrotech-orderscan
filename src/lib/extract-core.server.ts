@@ -285,12 +285,15 @@ async function runExtractionUnguarded(supabase: SB, extractionId: string): Promi
 
   if (fetchErr || !extraction) return { ok: false, error: "not_found" };
 
-  let ocrText = ((extraction as any).ocr_text || "").trim();
+  // extractions has no column to cache OCR text in, so every run reads the image
+  // again rather than resuming from a stored transcript. Adding such a column is
+  // what would make retries cheaper; until then this stays a local.
+  let ocrText = "";
 
   // If OCR text is missing, attempt to call the OCR service
   if (!ocrText) {
     if (!OCR_URL) {
-      console.error("[extract-core] OCR_URL is missing and extraction row has no ocr_text");
+      console.error("[extract-core] OCR_URL is missing and there is no OCR text to fall back on");
       await supabase.from("extractions").update({
         status: "failed",
         error_message: "OCR service not configured and no OCR text provided.",
@@ -356,12 +359,10 @@ async function runExtractionUnguarded(supabase: SB, extractionId: string): Promi
         throw new Error("OCR service returned empty text for this image.");
       }
 
-      // Save OCR text for future use/retries
       const { data: savedRows, error: saveErr } = await supabase.from("extractions").update({
-        ocr_text: ocrText,
         status: "ocr_completed",
         updated_at: nowIso(),
-      } as any).eq("id", extraction.id).select("id");
+      }).eq("id", extraction.id).select("id");
 
       // A write that changes nothing leaves the row exactly where it started, so
       // the next pass redoes the OCR we just paid for — and does so silently
@@ -496,7 +497,8 @@ ${ocrText}
     avg_confidence: avgConfidence(confidence),
     raw_response: parsed as any,
     error_message: null,
-    processing_completed_at: nowIso(),
+    // No processing_completed_at column exists on extractions; updated_at is
+    // what actually records when the row reached this state.
     updated_at: nowIso(),
   };
   
@@ -528,7 +530,25 @@ ${ocrText}
     }
   }
 
-  await supabase.from("extractions").update(update as any).eq("id", extraction.id);
+  const { data: writtenRows, error: writeErr } = await supabase
+    .from("extractions")
+    .update(update as any)
+    .eq("id", extraction.id)
+    .select("id");
+
+  // Reporting success for a result that was never stored would leave the row
+  // queued forever while the batch counted it as done.
+  if (writeErr || !writtenRows?.length) {
+    const reason = writeErr?.message ?? "no rows matched";
+    console.error("[extract-core] Could not save extracted fields:", reason);
+    await supabase
+      .from("extractions")
+      .update({ status: "failed", error_message: `Could not save result: ${reason}`.slice(0, 500), updated_at: nowIso() })
+      .eq("id", extraction.id);
+    await syncBatchCounts(supabase, extraction.batch_id);
+    return { ok: false, error: "save_failed" };
+  }
+
   await syncBatchCounts(supabase, extraction.batch_id);
 
   return { ok: true, extraction_id: extraction.id };
