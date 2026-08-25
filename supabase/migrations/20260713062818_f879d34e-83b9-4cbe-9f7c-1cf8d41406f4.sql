@@ -1,0 +1,1 @@
+UPDATE public.billing_settings SET instructions = 'Send proof of payment (screenshot or receipt) via email or WhatsApp using the contacts below, and include your workspace reference.' WHERE id = 'global';

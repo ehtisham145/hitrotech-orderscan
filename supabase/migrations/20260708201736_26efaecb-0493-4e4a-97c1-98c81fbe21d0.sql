@@ -1,0 +1,1 @@
+ALTER TABLE public.scheduled_reports ADD COLUMN IF NOT EXISTS recipients text[] NOT NULL DEFAULT '{}';

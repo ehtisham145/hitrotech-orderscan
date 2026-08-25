@@ -1,0 +1,1 @@
+ALTER TYPE public.partner_role ADD VALUE IF NOT EXISTS 'asm';

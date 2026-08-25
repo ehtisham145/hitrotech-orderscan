@@ -1,0 +1,71 @@
+services:
+  ocr:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: prod
+    image: orderscan-ocr:${IMAGE_TAG:-latest}
+    container_name: orderscan-ocr
+    env_file:
+      - .env
+    ports:
+      - "${OCR_PORT:-8000}:8080"
+    networks:
+      - default
+      - orderscan-net
+    mem_limit: ${OCR_MEMORY_LIMIT:-4g}
+    cpus: ${OCR_CPU_LIMIT:-2}
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 45s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+    restart: unless-stopped
+
+  # Reverse proxy + TLS termination. Only starts with `--profile proxy` (see
+  # ops/deploy.sh --with-proxy). Not needed for plain IP:PORT testing.
+  nginx:
+    image: nginx:alpine
+    container_name: orderscan-ocr-nginx
+    profiles: ["proxy"]
+    depends_on:
+      ocr:
+        condition: service_healthy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./ops/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - certbot-etc:/etc/letsencrypt:ro
+      - certbot-www:/var/www/certbot:ro
+    restart: unless-stopped
+
+  # One-shot / cron-driven cert issuance & renewal, invoked via
+  # `compose run --rm certbot ...` from ops/ssl-renew.sh. No `restart` policy
+  # on purpose: if `--profile proxy up` starts it, it runs certbot's default
+  # (harmless, exits immediately) and stays stopped until ssl-renew.sh uses it.
+  certbot:
+    image: certbot/certbot
+    container_name: orderscan-ocr-certbot
+    profiles: ["proxy"]
+    volumes:
+      - certbot-etc:/etc/letsencrypt
+      - certbot-www:/var/www/certbot
+
+volumes:
+  certbot-etc:
+  certbot-www:
+
+networks:
+  # Shared with the main app's docker-compose.prod.yml so it can reach this
+  # service as http://ocr:8080 without a round-trip through the public port.
+  # Created by ops/deploy.sh (either side) — `external: true` means compose
+  # will error instead of silently creating a second network if it's missing.
+  orderscan-net:
+    external: true

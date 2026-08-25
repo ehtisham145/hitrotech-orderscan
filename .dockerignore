@@ -1,0 +1,21 @@
+node_modules
+.output
+.vinxi
+.nitro
+dist
+dist-ssr
+.git
+.vscode
+.idea
+*.log
+
+# separate service, its own build context
+ocr-service
+
+# secrets — passed at runtime via env_file, never baked into the image
+.env
+.env.*
+!.env.example
+
+backups
+ops/.state

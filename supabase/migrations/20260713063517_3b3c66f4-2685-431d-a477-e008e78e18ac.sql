@@ -1,0 +1,2 @@
+ALTER TABLE public.verification_codes DROP CONSTRAINT IF EXISTS verification_codes_purpose_check;
+ALTER TABLE public.verification_codes ADD CONSTRAINT verification_codes_purpose_check CHECK (purpose = ANY (ARRAY['signup'::text, 'reset'::text, 'login'::text]));

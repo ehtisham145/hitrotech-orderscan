@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX IF NOT EXISTS partners_cnic_unique ON public.partners (lower(cnic)) WHERE cnic IS NOT NULL AND btrim(cnic) <> '';

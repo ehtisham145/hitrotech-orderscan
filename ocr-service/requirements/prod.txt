@@ -1,0 +1,5 @@
+# Production extras on top of base.
+-r base.txt
+
+# Structured JSON logs (ops/logs.sh and log aggregators expect one JSON object per line).
+python-json-logger==2.0.7

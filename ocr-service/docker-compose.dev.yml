@@ -1,0 +1,23 @@
+services:
+  ocr:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: dev
+    image: orderscan-ocr:dev
+    container_name: orderscan-ocr-dev
+    env_file:
+      - .env
+    environment:
+      LOG_FORMAT: text
+    ports:
+      - "${OCR_PORT:-8000}:8080"
+    volumes:
+      - ./app:/app/app
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    restart: unless-stopped
