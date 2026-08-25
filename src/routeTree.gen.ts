@@ -23,6 +23,7 @@ import { Route as AuthenticatedSearchRouteImport } from './routes/_authenticated
 import { Route as AuthenticatedSuperadminRouteImport } from './routes/_authenticated/superadmin'
 import { Route as ApiEmailExportAllRouteImport } from './routes/api/email-export-all'
 import { Route as ApiExtractRouteImport } from './routes/api/extract'
+import { Route as ApiHealthRouteImport } from './routes/api/health'
 import { Route as ApiQueueExtractionsRouteImport } from './routes/api/queue-extractions'
 import { Route as AuthCallbackRouteImport } from './routes/auth.callback'
 import { Route as AuthenticatedAdminAnomaliesRouteImport } from './routes/_authenticated/admin.anomalies'
@@ -128,6 +129,11 @@ const ApiEmailExportAllRoute = ApiEmailExportAllRouteImport.update({
 const ApiExtractRoute = ApiExtractRouteImport.update({
   id: '/api/extract',
   path: '/api/extract',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiHealthRoute = ApiHealthRouteImport.update({
+  id: '/api/health',
+  path: '/api/health',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiQueueExtractionsRoute = ApiQueueExtractionsRouteImport.update({
@@ -351,6 +357,7 @@ export interface FileRoutesByFullPath {
   '/superadmin': typeof AuthenticatedSuperadminRouteWithChildren
   '/api/email-export-all': typeof ApiEmailExportAllRoute
   '/api/extract': typeof ApiExtractRoute
+  '/api/health': typeof ApiHealthRoute
   '/api/queue-extractions': typeof ApiQueueExtractionsRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/admin/anomalies': typeof AuthenticatedAdminAnomaliesRoute
@@ -402,6 +409,7 @@ export interface FileRoutesByTo {
   '/superadmin': typeof AuthenticatedSuperadminRouteWithChildren
   '/api/email-export-all': typeof ApiEmailExportAllRoute
   '/api/extract': typeof ApiExtractRoute
+  '/api/health': typeof ApiHealthRoute
   '/api/queue-extractions': typeof ApiQueueExtractionsRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/admin/anomalies': typeof AuthenticatedAdminAnomaliesRoute
@@ -455,6 +463,7 @@ export interface FileRoutesById {
   '/_authenticated/superadmin': typeof AuthenticatedSuperadminRouteWithChildren
   '/api/email-export-all': typeof ApiEmailExportAllRoute
   '/api/extract': typeof ApiExtractRoute
+  '/api/health': typeof ApiHealthRoute
   '/api/queue-extractions': typeof ApiQueueExtractionsRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/_authenticated/admin/anomalies': typeof AuthenticatedAdminAnomaliesRoute
@@ -508,6 +517,7 @@ export interface FileRouteTypes {
     | '/superadmin'
     | '/api/email-export-all'
     | '/api/extract'
+    | '/api/health'
     | '/api/queue-extractions'
     | '/auth/callback'
     | '/admin/anomalies'
@@ -559,6 +569,7 @@ export interface FileRouteTypes {
     | '/superadmin'
     | '/api/email-export-all'
     | '/api/extract'
+    | '/api/health'
     | '/api/queue-extractions'
     | '/auth/callback'
     | '/admin/anomalies'
@@ -611,6 +622,7 @@ export interface FileRouteTypes {
     | '/_authenticated/superadmin'
     | '/api/email-export-all'
     | '/api/extract'
+    | '/api/health'
     | '/api/queue-extractions'
     | '/auth/callback'
     | '/_authenticated/admin/anomalies'
@@ -658,6 +670,7 @@ export interface RootRouteChildren {
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
   ApiEmailExportAllRoute: typeof ApiEmailExportAllRoute
   ApiExtractRoute: typeof ApiExtractRoute
+  ApiHealthRoute: typeof ApiHealthRoute
   ApiQueueExtractionsRoute: typeof ApiQueueExtractionsRoute
   ApiEmailExportBatchIdRoute: typeof ApiEmailExportBatchIdRoute
   ApiExportBatchIdRoute: typeof ApiExportBatchIdRoute
@@ -765,6 +778,13 @@ declare module '@tanstack/react-router' {
       path: '/api/extract'
       fullPath: '/api/extract'
       preLoaderRoute: typeof ApiExtractRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/health': {
+      id: '/api/health'
+      path: '/api/health'
+      fullPath: '/api/health'
+      preLoaderRoute: typeof ApiHealthRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/queue-extractions': {
@@ -1157,6 +1177,7 @@ const rootRouteChildren: RootRouteChildren = {
   SitemapDotxmlRoute: SitemapDotxmlRoute,
   ApiEmailExportAllRoute: ApiEmailExportAllRoute,
   ApiExtractRoute: ApiExtractRoute,
+  ApiHealthRoute: ApiHealthRoute,
   ApiQueueExtractionsRoute: ApiQueueExtractionsRoute,
   ApiEmailExportBatchIdRoute: ApiEmailExportBatchIdRoute,
   ApiExportBatchIdRoute: ApiExportBatchIdRoute,
