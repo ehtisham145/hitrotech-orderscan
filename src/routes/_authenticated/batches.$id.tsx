@@ -21,7 +21,7 @@ import { cn } from "@/lib/utils";
 import { ConfidenceDot } from "@/components/ConfidenceDot";
 import { DuplicateBadge } from "@/components/DuplicateBadge";
 import { useServerFn } from "@tanstack/react-start";
-import { processExtractionNow, queueExtractions } from "@/lib/queue.functions";
+import { keepBatchRowsFresh, processExtractionNow, queueExtractions } from "@/lib/queue.functions";
 
 const filterSchema = z.object({
   status: fallback(z.string(), "all").default("all"),
@@ -34,9 +34,25 @@ const filterSchema = z.object({
 
 const PAGE_SIZE = 100;
 const STALE_PROCESSING_MS = 2 * 60_000;
+// Keeps queued rows from ageing past the staleness cutoff while this page is
+// driving the batch. Comfortably under STALE_PROCESSING_MS.
+const QUEUE_HEARTBEAT_MS = 30_000;
+// A row that keeps coming back failed is not making progress; stop re-driving
+// it and leave it for a human rather than looping.
+const MAX_AUTO_RETRIES_PER_ROW = 3;
 
 function isRecoverableQueueFailure(message: string | null | undefined) {
   return /AI not configured|Failed to fetch|Queue failed|Background queue|AI rate limit|retrying automatically|Waiting for AI capacity|Processing directly|already_processing|already_claimed|proxy_/i.test(message ?? "");
+}
+
+/**
+ * Failures that came from a worker configured differently to this one — a
+ * retired AI model, or an OCR endpoint this deployment no longer points at.
+ * The row itself is fine; whichever worker claimed it was running stale
+ * config, so re-driving it here is worth a few attempts.
+ */
+function isForeignWorkerFailure(message: string | null | undefined) {
+  return /OCR service failed \(503\)|no longer available|models\/gemini-2\.0/i.test(message ?? "");
 }
 
 function isStaleProcessingRow(row: { status: string; updated_at?: string | null }) {
@@ -65,6 +81,7 @@ function BatchDetail() {
   const qc = useQueryClient();
   const queueExtractionsFn = useServerFn(queueExtractions);
   const processExtractionNowFn = useServerFn(processExtractionNow);
+  const keepBatchRowsFreshFn = useServerFn(keepBatchRowsFresh);
   const [viewingPath, setViewingPath] = useState<string | null>(null);
   const [imgUrl, setImgUrl] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -73,6 +90,7 @@ function BatchDetail() {
   const browserProcessing = useRef(false);
   const browserProcessedIds = useRef<Set<string>>(new Set());
   const directRetryAfter = useRef<Map<string, number>>(new Map());
+  const autoRetryCounts = useRef<Map<string, number>>(new Map());
 
   const { data: batch } = useQuery({
     queryKey: ["batch", id],
@@ -181,12 +199,34 @@ function BatchDetail() {
     void runQueue(pending, "auto");
   }, [batch, queueRunning, rows, runQueue]);
 
+  // Keep this batch's queued rows from ageing into the staleness cutoff while
+  // we are the ones working through them — a row waiting its turn behind a long
+  // batch is otherwise indistinguishable from an abandoned job, and gets
+  // requeued out from under us.
+  useEffect(() => {
+    if (!batch || batch.status === "paused" || batch.status === "cancelled" || batch.status === "completed") return;
+    if (!rows?.some((r) => r.status === "pending")) return;
+
+    const tick = () => {
+      void keepBatchRowsFreshFn({ data: { batch_id: id } }).catch(() => {
+        // Best-effort: a missed beat just means the next one covers it.
+      });
+    };
+    const timer = setInterval(tick, QUEUE_HEARTBEAT_MS);
+    return () => clearInterval(timer);
+  }, [batch, id, keepBatchRowsFreshFn, rows]);
+
   // Safety net: process queued rows directly from the open batch page without
   // showing per-image popups. The server still claims each row atomically, so
   // this does not duplicate work if the durable background worker also starts.
   useEffect(() => {
     if (!batch || !rows || browserProcessing.current) return;
-    const hasRecoverableFailures = rows.some((r) => r.status === "failed" && isRecoverableQueueFailure(r.error_message));
+    const isRedrivable = (r: { status: string; id: string; error_message?: string | null }) =>
+      r.status === "failed" &&
+      (isRecoverableQueueFailure(r.error_message) ||
+        (isForeignWorkerFailure(r.error_message) &&
+          (autoRetryCounts.current.get(r.id) ?? 0) < MAX_AUTO_RETRIES_PER_ROW));
+    const hasRecoverableFailures = rows.some(isRedrivable);
     if (batch.status === "paused" || batch.status === "cancelled") return;
     if (batch.status === "completed" && !hasRecoverableFailures) return;
 
@@ -194,12 +234,18 @@ function BatchDetail() {
     const pending = rows
       .filter(
         (r) =>
-          (r.status === "pending" || (r.status === "failed" && isRecoverableQueueFailure(r.error_message))) &&
+          (r.status === "pending" || isRedrivable(r)) &&
           !isStaleProcessingRow(r) &&
           !browserProcessedIds.current.has(r.id) &&
           (directRetryAfter.current.get(r.id) ?? 0) <= now,
       )
       .map((r) => r.id);
+    pending.forEach((rowId) => {
+      const row = rows.find((r) => r.id === rowId);
+      if (row?.status === "failed") {
+        autoRetryCounts.current.set(rowId, (autoRetryCounts.current.get(rowId) ?? 0) + 1);
+      }
+    });
     if (pending.length === 0) return;
 
     let cancelled = false;

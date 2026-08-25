@@ -155,3 +155,30 @@ export const processExtractionNow = createServerFn({ method: "POST" })
 
     return result;
   });
+
+/**
+ * Republishes updated_at on a batch's still-queued rows.
+ *
+ * Stale-job recovery treats any row left in pending/processing past a two
+ * minute cutoff as abandoned and requeues it. Rows waiting their turn behind a
+ * long batch look exactly like that, so a worker watching the same database
+ * picks them up mid-run. Called on an interval by an open batch page for as
+ * long as it is actually driving the batch; RLS scopes it to the caller's own
+ * rows.
+ */
+export const keepBatchRowsFresh = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: { batch_id: string }) => input)
+  .handler(async ({ data, context }) => {
+    if (!data.batch_id) return { refreshed: 0 };
+
+    const { data: rows, error } = await context.supabase
+      .from("extractions")
+      .update({ updated_at: new Date().toISOString() })
+      .eq("batch_id", data.batch_id)
+      .eq("status", "pending")
+      .select("id");
+    if (error) throw new Error(error.message);
+
+    return { refreshed: rows?.length ?? 0 };
+  });
