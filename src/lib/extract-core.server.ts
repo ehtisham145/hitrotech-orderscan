@@ -219,7 +219,54 @@ async function notifyBatchCompleted(
   }
 }
 
+// How often a row being actively worked on republishes its updated_at. Must stay
+// comfortably under the staleness cutoff used by requeueStaleExtractions
+// (2 minutes) so a slow-but-healthy job is never mistaken for a dead one.
+const HEARTBEAT_INTERVAL_MS = 30_000;
+
+// Upper bound on a single OCR call. Generous enough for a dense screenshot on a
+// small CPU-only host, short enough that a wedged worker surfaces as a failure
+// instead of a request that never returns.
+const OCR_TIMEOUT_MS = Number(process.env.OCR_TIMEOUT_MS) || 120_000;
+
+// Same reasoning for the AI provider call.
+const AI_TIMEOUT_MS = Number(process.env.AI_TIMEOUT_MS) || 90_000;
+
+/**
+ * Runs an extraction, keeping the row's updated_at fresh for as long as the work
+ * is actually in flight.
+ *
+ * Without this, any worker watching for stale jobs (ours or another deployment
+ * pointed at the same database) sees a row whose OCR simply takes longer than
+ * the staleness cutoff, assumes the job died, and requeues it — so two workers
+ * end up racing over one row and the slower-but-correct result loses.
+ */
 export async function runExtraction(supabase: SB, extractionId: string): Promise<RunExtractionResult> {
+  const heartbeat = setInterval(() => {
+    void (async () => {
+      try {
+        // Guarded on status so a finished/cancelled row is never resurrected by
+        // an in-flight tick.
+        await supabase
+          .from("extractions")
+          .update({ updated_at: nowIso() })
+          .eq("id", extractionId)
+          .eq("status", "processing");
+      } catch {
+        // A dropped heartbeat is harmless on its own — the next tick retries.
+      }
+    })();
+  }, HEARTBEAT_INTERVAL_MS);
+  heartbeat.unref?.();
+
+  try {
+    return await runExtractionUnguarded(supabase, extractionId);
+  } finally {
+    clearInterval(heartbeat);
+  }
+}
+
+async function runExtractionUnguarded(supabase: SB, extractionId: string): Promise<RunExtractionResult> {
   const LOVABLE_API_KEY = process.env.LOVABLE_API_KEY;
   const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
   const OCR_URL = process.env.OCR_URL;
@@ -264,20 +311,25 @@ export async function runExtraction(supabase: SB, extractionId: string): Promise
         throw new Error(`Failed to download image from storage: ${downloadErr?.message || "Unknown error"}`);
       }
 
-      console.log(`[extract-core] Downloaded image: size=${(imgData as any).size} type=${(imgData as any).type} path=${extraction.storage_path}`);
-
       const formData = new FormData();
       formData.append("file", new Blob([imgData], { type: imgData.type || "image/jpeg" }), extraction.file_name || "image.jpg");
 
       const baseUrl = OCR_URL.replace(/\/+$/, "");
       // Log both potential endpoints to help debugging
       const targetUrl = `${baseUrl}/ocr/upload`;
-      console.log(`[extract-core] Attempting OCR at: ${targetUrl} (alias /extract also available)`);
+      const ocrStartedAt = Date.now();
+      console.log(
+        `[extract-core] OCR request -> ${targetUrl} (bytes=${(imgData as any).size}, type=${(imgData as any).type})`,
+      );
+      // Without a deadline a stalled OCR worker holds the request open forever,
+      // leaving the row in "processing" until something else times it out.
       const ocrRes = await fetch(targetUrl, {
         method: "POST",
         headers: OCR_API_KEY ? { "X-API-Key": OCR_API_KEY } : {},
         body: formData,
+        signal: AbortSignal.timeout(OCR_TIMEOUT_MS),
       });
+      console.log(`[extract-core] OCR responded ${ocrRes.status} in ${Date.now() - ocrStartedAt}ms`);
 
       if (!ocrRes.ok) {
         const ocrErrBody = await ocrRes.text().catch(() => "Unknown OCR error");
@@ -299,7 +351,7 @@ export async function runExtraction(supabase: SB, extractionId: string): Promise
       } as any).eq("id", extraction.id);
 
     } catch (err: any) {
-      console.error("[extract-core] OCR step failed:", err.message, "| name:", err.name, "| cause:", err.cause, "| stack:", err.stack);
+      console.error("[extract-core] OCR step failed:", err.message, "| cause:", err.cause);
       await supabase.from("extractions").update({
         status: "failed",
         error_message: `OCR failed: ${err.message}`.slice(0, 500),
@@ -334,6 +386,7 @@ ${ocrText}
       messages,
       response_format: { type: "json_object" },
     }),
+    signal: AbortSignal.timeout(AI_TIMEOUT_MS),
   });
 
   let aiRes: Response;
@@ -351,6 +404,7 @@ ${ocrText}
           messages,
           response_format: { type: "json_object" },
         }),
+        signal: AbortSignal.timeout(AI_TIMEOUT_MS),
       });
       if (!aiRes.ok) {
         directErrBody = (await aiRes.text().catch(() => "")).slice(0, 500);

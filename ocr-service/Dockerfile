@@ -6,7 +6,15 @@ ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
     HOME=/app \
-    PORT=8080
+    PORT=8080 \
+    # Paddle/OpenCV pull in OpenMP + MKL, which size their thread pools (and the
+    # per-thread scratch buffers that dominate this container's memory) from the
+    # host's core count rather than the container's CPU share. Pin them so a
+    # single request can't fan out past the CPUs this service actually has.
+    OMP_NUM_THREADS=2 \
+    MKL_NUM_THREADS=2 \
+    OPENBLAS_NUM_THREADS=2 \
+    FLAGS_allocator_strategy=auto_growth
 
 # OpenCV + PaddleOCR runtime libs
 RUN apt-get update && apt-get install -y --no-install-recommends \
