@@ -203,9 +203,16 @@ function BatchDetail() {
   // we are the ones working through them — a row waiting its turn behind a long
   // batch is otherwise indistinguishable from an abandoned job, and gets
   // requeued out from under us.
+  // Depends on booleans, not on `batch`/`rows` themselves: those are new objects
+  // on every poll, and re-running the effect that often would clear the interval
+  // before it ever reached its first tick.
+  const batchIsWorking = Boolean(
+    batch && batch.status !== "paused" && batch.status !== "cancelled" && batch.status !== "completed",
+  );
+  const hasQueuedRows = Boolean(rows?.some((r) => r.status === "pending"));
+
   useEffect(() => {
-    if (!batch || batch.status === "paused" || batch.status === "cancelled" || batch.status === "completed") return;
-    if (!rows?.some((r) => r.status === "pending")) return;
+    if (!batchIsWorking || !hasQueuedRows) return;
 
     const tick = () => {
       void keepBatchRowsFreshFn({ data: { batch_id: id } }).catch(() => {
@@ -214,7 +221,7 @@ function BatchDetail() {
     };
     const timer = setInterval(tick, QUEUE_HEARTBEAT_MS);
     return () => clearInterval(timer);
-  }, [batch, id, keepBatchRowsFreshFn, rows]);
+  }, [batchIsWorking, hasQueuedRows, id, keepBatchRowsFreshFn]);
 
   // Safety net: process queued rows directly from the open batch page without
   // showing per-image popups. The server still claims each row atomically, so
