@@ -10,7 +10,7 @@ from __future__ import annotations
 import cv2
 import numpy as np
 
-MAX_SIDE = 1920
+MAX_SIDE = 1280
 MIN_SIDE = 640
 
 

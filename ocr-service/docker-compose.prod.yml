@@ -14,6 +14,12 @@ services:
       - default
       - orderscan-net
     mem_limit: ${OCR_MEMORY_LIMIT:-4g}
+    # Let this container spill into host swap once it hits mem_limit instead of
+    # being OOM-killed outright — a real (non-corrupt) image can occasionally
+    # spike PaddleOCR's memory use well past a "normal" request. Requires a
+    # swapfile on the host (see ops/deploy.sh docs); without one this has no
+    # effect and mem_limit alone still applies.
+    memswap_limit: ${OCR_MEMORY_SWAP_LIMIT:-8g}
     cpus: ${OCR_CPU_LIMIT:-2}
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8080/health"]

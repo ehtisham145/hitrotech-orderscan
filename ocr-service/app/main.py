@@ -49,6 +49,15 @@ def get_engine() -> Any:
             show_log=False,
             det_model_dir=os.environ.get("DET_MODEL_DIR") or None,
             rec_model_dir=os.environ.get("REC_MODEL_DIR") or None,
+            # Bounds the internal detection resize regardless of input size — without
+            # this, a real (non-synthetic) image can push the detection network's
+            # memory usage into multiple GB and get OOM-killed on small VPS instances,
+            # while a preprocessed-but-still-large input sails through untouched.
+            det_limit_side_len=960,
+            # Small, fixed recognition batch so memory doesn't scale with how many
+            # text regions a noisy/dense screenshot happens to detect.
+            rec_batch_num=6,
+            cpu_threads=2,
         )
     return _engine
 
