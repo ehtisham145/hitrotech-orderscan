@@ -264,6 +264,8 @@ export async function runExtraction(supabase: SB, extractionId: string): Promise
         throw new Error(`Failed to download image from storage: ${downloadErr?.message || "Unknown error"}`);
       }
 
+      console.log(`[extract-core] Downloaded image: size=${(imgData as any).size} type=${(imgData as any).type} path=${extraction.storage_path}`);
+
       const formData = new FormData();
       formData.append("file", new Blob([imgData], { type: imgData.type || "image/jpeg" }), extraction.file_name || "image.jpg");
 
@@ -297,7 +299,7 @@ export async function runExtraction(supabase: SB, extractionId: string): Promise
       } as any).eq("id", extraction.id);
 
     } catch (err: any) {
-      console.error("[extract-core] OCR step failed:", err.message);
+      console.error("[extract-core] OCR step failed:", err.message, "| name:", err.name, "| cause:", err.cause, "| stack:", err.stack);
       await supabase.from("extractions").update({
         status: "failed",
         error_message: `OCR failed: ${err.message}`.slice(0, 500),
