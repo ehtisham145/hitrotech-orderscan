@@ -21,10 +21,6 @@ profile_args=()
 log_info "Running secrets-check..."
 "$OPS_DIR/secrets-check.sh"
 
-# Shared network with ocr-service/docker-compose.prod.yml. Idempotent —
-# whichever service deploys first creates it.
-docker network inspect orderscan-net >/dev/null 2>&1 || docker network create orderscan-net
-
 if docker image inspect "$IMAGE_NAME:latest" >/dev/null 2>&1; then
   docker tag "$IMAGE_NAME:latest" "$IMAGE_NAME:prev"
   log_info "Tagged current image as $IMAGE_NAME:prev (rollback target)"

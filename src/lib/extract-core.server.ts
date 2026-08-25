@@ -224,22 +224,23 @@ async function notifyBatchCompleted(
 // (2 minutes) so a slow-but-healthy job is never mistaken for a dead one.
 const HEARTBEAT_INTERVAL_MS = 30_000;
 
-// Upper bound on a single OCR call. Generous enough for a dense screenshot on a
-// small CPU-only host, short enough that a wedged worker surfaces as a failure
-// instead of a request that never returns.
-const OCR_TIMEOUT_MS = Number(process.env.OCR_TIMEOUT_MS) || 120_000;
-
-// Same reasoning for the AI provider call.
+// Upper bound on the AI provider call, so a stalled request surfaces as a
+// failure instead of holding the row open indefinitely.
 const AI_TIMEOUT_MS = Number(process.env.AI_TIMEOUT_MS) || 90_000;
+
+// Screenshots are sent inline as base64, which costs roughly a third more than
+// the raw bytes. Uploads this large are a sign something other than a phone
+// screenshot got through, and are worth rejecting before paying to send them.
+const MAX_IMAGE_BYTES = Number(process.env.MAX_IMAGE_BYTES) || 12 * 1024 * 1024;
 
 /**
  * Runs an extraction, keeping the row's updated_at fresh for as long as the work
  * is actually in flight.
  *
  * Without this, any worker watching for stale jobs (ours or another deployment
- * pointed at the same database) sees a row whose OCR simply takes longer than
- * the staleness cutoff, assumes the job died, and requeues it — so two workers
- * end up racing over one row and the slower-but-correct result loses.
+ * pointed at the same database) sees a row whose extraction simply takes longer
+ * than the staleness cutoff, assumes the job died, and requeues it — so two
+ * workers end up racing over one row and the slower-but-correct result loses.
  */
 export async function runExtraction(supabase: SB, extractionId: string): Promise<RunExtractionResult> {
   const heartbeat = setInterval(() => {
@@ -269,8 +270,6 @@ export async function runExtraction(supabase: SB, extractionId: string): Promise
 async function runExtractionUnguarded(supabase: SB, extractionId: string): Promise<RunExtractionResult> {
   const LOVABLE_API_KEY = process.env.LOVABLE_API_KEY;
   const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-  const OCR_URL = process.env.OCR_URL;
-  const OCR_API_KEY = process.env.OCR_API_KEY;
 
   if (!LOVABLE_API_KEY && !GEMINI_API_KEY) {
     console.error("[extract-core] Both LOVABLE_API_KEY and GEMINI_API_KEY are missing in the server runtime");
@@ -285,113 +284,65 @@ async function runExtractionUnguarded(supabase: SB, extractionId: string): Promi
 
   if (fetchErr || !extraction) return { ok: false, error: "not_found" };
 
-  // extractions has no column to cache OCR text in, so every run reads the image
-  // again rather than resuming from a stored transcript. Adding such a column is
-  // what would make retries cheaper; until then this stays a local.
-  let ocrText = "";
+  // The model reads the screenshot itself rather than a transcript of it: laid-out
+  // receipts lose meaning once flattened to a line of text, and a separate OCR
+  // pass was both the slowest step and the one that had to be sized and kept
+  // alive for its own sake.
+  let imageDataUrl: string;
 
-  // If OCR text is missing, attempt to call the OCR service
-  if (!ocrText) {
-    if (!OCR_URL) {
-      console.error("[extract-core] OCR_URL is missing and there is no OCR text to fall back on");
-      await supabase.from("extractions").update({
-        status: "failed",
-        error_message: "OCR service not configured and no OCR text provided.",
-        updated_at: nowIso(),
-      }).eq("id", extraction.id);
-      await syncBatchCounts(supabase, extraction.batch_id);
-      return { ok: false, error: "no_ocr_config" };
-    }
+  try {
+    const { data: claimed, error: claimErr } = await supabase
+      .from("extractions")
+      .update({ status: "processing", error_message: "Reading screenshot...", updated_at: nowIso() })
+      .eq("id", extractionId)
+      .select("id");
 
-    try {
-      const { data: claimed, error: claimErr } = await supabase
-        .from("extractions")
-        .update({ status: "processing", error_message: "Calling OCR service...", updated_at: nowIso() })
-        .eq("id", extractionId)
-        .select("id");
-
-      // Nothing below is worth doing if this caller cannot actually write to the
-      // row: the work would run, produce a result, and then be dropped on the
-      // floor by the same silent no-op, over and over.
-      if (claimErr || !claimed?.length) {
-        throw new Error(
-          `Could not mark extraction as processing: ${claimErr?.message ?? "no rows matched — check update permissions for this caller"}`,
-        );
-      }
-
-      const { data: imgData, error: downloadErr } = await supabase.storage
-        .from("screenshots")
-        .download(extraction.storage_path);
-
-      if (downloadErr || !imgData) {
-        throw new Error(`Failed to download image from storage: ${downloadErr?.message || "Unknown error"}`);
-      }
-
-      const formData = new FormData();
-      formData.append("file", new Blob([imgData], { type: imgData.type || "image/jpeg" }), extraction.file_name || "image.jpg");
-
-      const baseUrl = OCR_URL.replace(/\/+$/, "");
-      // Log both potential endpoints to help debugging
-      const targetUrl = `${baseUrl}/ocr/upload`;
-      const ocrStartedAt = Date.now();
-      console.log(
-        `[extract-core] OCR request -> ${targetUrl} (bytes=${(imgData as any).size}, type=${(imgData as any).type})`,
+    // Nothing below is worth doing if this caller cannot actually write to the
+    // row: the work would run, produce a result, and then be dropped on the
+    // floor by the same silent no-op, over and over.
+    if (claimErr || !claimed?.length) {
+      throw new Error(
+        `Could not mark extraction as processing: ${claimErr?.message ?? "no rows matched — check update permissions for this caller"}`,
       );
-      // Without a deadline a stalled OCR worker holds the request open forever,
-      // leaving the row in "processing" until something else times it out.
-      const ocrRes = await fetch(targetUrl, {
-        method: "POST",
-        headers: OCR_API_KEY ? { "X-API-Key": OCR_API_KEY } : {},
-        body: formData,
-        signal: AbortSignal.timeout(OCR_TIMEOUT_MS),
-      });
-      console.log(`[extract-core] OCR responded ${ocrRes.status} in ${Date.now() - ocrStartedAt}ms`);
-
-      if (!ocrRes.ok) {
-        const ocrErrBody = await ocrRes.text().catch(() => "Unknown OCR error");
-        throw new Error(`OCR service failed (${ocrRes.status}): ${ocrErrBody.slice(0, 200)}`);
-      }
-
-      const ocrJson: any = await ocrRes.json();
-      ocrText = (ocrJson.text || "").trim();
-
-      if (!ocrText) {
-        throw new Error("OCR service returned empty text for this image.");
-      }
-
-      const { data: savedRows, error: saveErr } = await supabase.from("extractions").update({
-        status: "ocr_completed",
-        updated_at: nowIso(),
-      }).eq("id", extraction.id).select("id");
-
-      // A write that changes nothing leaves the row exactly where it started, so
-      // the next pass redoes the OCR we just paid for — and does so silently
-      // unless the result is actually inspected.
-      if (saveErr || !savedRows?.length) {
-        throw new Error(
-          `Could not persist OCR text (row not updated): ${saveErr?.message ?? "no rows matched — check update permissions for this caller"}`,
-        );
-      }
-
-    } catch (err: any) {
-      console.error("[extract-core] OCR step failed:", err.message, "| cause:", err.cause);
-      await supabase.from("extractions").update({
-        status: "failed",
-        error_message: `OCR failed: ${err.message}`.slice(0, 500),
-        updated_at: nowIso(),
-      }).eq("id", extraction.id);
-      await syncBatchCounts(supabase, extraction.batch_id);
-      return { ok: false, error: "ocr_failed" };
     }
+
+    const { data: imgData, error: downloadErr } = await supabase.storage
+      .from("screenshots")
+      .download(extraction.storage_path);
+
+    if (downloadErr || !imgData) {
+      throw new Error(`Failed to download image from storage: ${downloadErr?.message || "Unknown error"}`);
+    }
+
+    const bytes = Buffer.from(await imgData.arrayBuffer());
+    if (bytes.length > MAX_IMAGE_BYTES) {
+      throw new Error(`Image is ${Math.round(bytes.length / 1024 / 1024)}MB, over the ${MAX_IMAGE_BYTES / 1024 / 1024}MB limit`);
+    }
+
+    const mime = imgData.type || "image/png";
+    imageDataUrl = `data:${mime};base64,${bytes.toString("base64")}`;
+    console.log(`[extract-core] Sending screenshot to AI (bytes=${bytes.length}, type=${mime})`);
+  } catch (err: any) {
+    console.error("[extract-core] Could not read screenshot:", err.message, "| cause:", err.cause);
+    await supabase.from("extractions").update({
+      status: "failed",
+      error_message: `Could not read screenshot: ${err.message}`.slice(0, 500),
+      updated_at: nowIso(),
+    }).eq("id", extraction.id);
+    await syncBatchCounts(supabase, extraction.batch_id);
+    return { ok: false, error: "image_unavailable" };
   }
 
-  const userContent = [{
-    type: "text" as const,
-    text: `Extract all telecom order fields from the OCR text below. Return JSON only.
-===== OCR TEXT =====
-${ocrText}
-===== END OCR TEXT =====`
-  }];
+  const userContent = [
+    {
+      type: "text" as const,
+      text: "Extract all telecom order fields from this order screenshot. Return JSON only.",
+    },
+    {
+      type: "image_url" as const,
+      image_url: { url: imageDataUrl },
+    },
+  ];
 
   const messages = [
     { role: "system", content: SYSTEM_PROMPT },
