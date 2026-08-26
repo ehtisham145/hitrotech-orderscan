@@ -24,8 +24,8 @@ export default defineConfig({
     // pair for @tanstack/react-start's server-entry module (nitro 3 beta +
     // vite 8/rolldown) that crashes at runtime with
     // "TypeError: __exportAll is not a function". Inlining dynamic imports
-    // avoids the split entirely. Only applied for the VPS (node-server)
-    // build so Vercel's own build path is untouched.
-    ...(process.env.NITRO_PRESET === "node-server" ? { inlineDynamicImports: true } : {}),
+    // avoids the split entirely. Confirmed to hit both the VPS (node-server)
+    // build and Vercel's own build, so it applies regardless of preset.
+    inlineDynamicImports: true,
   },
 });
