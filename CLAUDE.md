@@ -116,16 +116,20 @@ The clean fix is still the client removing `INNGEST_EVENT_KEY` /
 `INNGEST_SIGNING_KEY` from their Vercel deployment, or pausing it. Worth asking
 for; don't wait on it.
 
-### 2.3 The VPS build needs `inlineDynamicImports`
+### 2.3 Every build needs `inlineDynamicImports`
 
 Nitro 3 beta + the Rolldown-based Vite 8 bundler splits
 `@tanstack/react-start`'s server entry into two chunks that import each other
 circularly. One needs the other's `__exportAll` helper before it is assigned, so
 **every request** 500s with `TypeError: __exportAll is not a function`.
 
-`vite.config.ts` sets `inlineDynamicImports: true` for the `node-server` preset
-only, so Vercel's build path is untouched. If that line disappears, the VPS build
-compiles fine and then fails at runtime on every request.
+`vite.config.ts` sets `inlineDynamicImports: true` unconditionally in the `nitro`
+block. This was originally scoped to the `node-server` preset only, on the
+assumption Vercel's own build path didn't hit the split — that assumption was
+wrong: a real Vercel deployment hit the identical `__exportAll is not a
+function` 500 on every route (confirmed via Vercel's Runtime Logs) until the
+condition was removed. If this line disappears, expect the same crash on
+**any** target (VPS or Vercel), not just one.
 
 ### 2.4 Processing is driven from the browser
 
