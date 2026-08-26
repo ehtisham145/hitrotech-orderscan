@@ -7,7 +7,8 @@ resulting order data drives partner commissions, payouts, billing, and
 reporting. The admin panel and the partner-facing portal are the same
 application, gated by role.
 
-## Table of contents
+
+### Table of contents
 
 - [What it does](#what-it-does)
 - [Architecture](#architecture)
