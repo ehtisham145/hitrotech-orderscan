@@ -2,6 +2,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/ext-auth-middleware";
 import { assertActiveWorkspaceRole } from "./authz.server";
+import { requireActiveWorkspaceId } from "./workspace-helpers";
 
 const WRITE_ROLES = ["owner", "admin", "manager"] as const;
 
@@ -10,9 +11,11 @@ export type PartnerRole = "franchise_owner" | "retailer" | "franchise_as_retaile
 export const listPartners = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
+    const wsId = await requireActiveWorkspaceId(context.supabase, context.userId);
     const { data, error } = await context.supabase
       .from("partners")
       .select("*")
+      .eq("workspace_id", wsId)
       .order("active", { ascending: false })
       .order("name", { ascending: true });
     if (error) throw new Error(error.message);
@@ -23,7 +26,8 @@ export const getPartner = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: { id: string }) => input)
   .handler(async ({ data, context }) => {
-    const { data: p, error } = await context.supabase.from("partners").select("*").eq("id", data.id).maybeSingle();
+    const wsId = await requireActiveWorkspaceId(context.supabase, context.userId);
+    const { data: p, error } = await context.supabase.from("partners").select("*").eq("workspace_id", wsId).eq("id", data.id).maybeSingle();
     if (error) throw new Error(error.message);
     return p;
   });
@@ -91,10 +95,10 @@ export const updatePartner = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: { id: string } & Partial<PartnerInput>) => input)
   .handler(async ({ data, context }) => {
-    await assertActiveWorkspaceRole(context.supabase, context.userId, [...WRITE_ROLES]);
+    const wsId = await assertActiveWorkspaceRole(context.supabase, context.userId, [...WRITE_ROLES]);
     const { id, ...rest } = data;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: row, error } = await context.supabase.from("partners").update(rest as any).eq("id", id).select("*").single();
+    const { data: row, error } = await context.supabase.from("partners").update(rest as any).eq("workspace_id", wsId).eq("id", id).select("*").single();
     if (error) {
       if (error.code === "23505" || /partners_cnic_unique/i.test(error.message)) {
         return { ok: false as const, error: "A partner with this CNIC already exists." };
@@ -109,8 +113,8 @@ export const deletePartner = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: { id: string }) => input)
   .handler(async ({ data, context }) => {
-    await assertActiveWorkspaceRole(context.supabase, context.userId, [...WRITE_ROLES]);
-    const { error } = await context.supabase.from("partners").delete().eq("id", data.id);
+    const wsId = await assertActiveWorkspaceRole(context.supabase, context.userId, [...WRITE_ROLES]);
+    const { error } = await context.supabase.from("partners").delete().eq("workspace_id", wsId).eq("id", data.id);
     if (error) throw new Error(error.message);
     return { ok: true };
   });
@@ -119,12 +123,12 @@ export const addPartnerMatchKey = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: { id: string; key: string }) => input)
   .handler(async ({ data, context }) => {
-    await assertActiveWorkspaceRole(context.supabase, context.userId, [...WRITE_ROLES]);
-    const { data: p } = await context.supabase.from("partners").select("match_keys").eq("id", data.id).single();
+    const wsId = await assertActiveWorkspaceRole(context.supabase, context.userId, [...WRITE_ROLES]);
+    const { data: p } = await context.supabase.from("partners").select("match_keys").eq("workspace_id", wsId).eq("id", data.id).single();
     const keys = new Set<string>(((p?.match_keys as string[] | null) ?? []).map((k) => k.trim()).filter(Boolean));
     if (data.key.trim()) keys.add(data.key.trim());
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { error } = await context.supabase.from("partners").update({ match_keys: Array.from(keys) } as any).eq("id", data.id);
+    const { error } = await context.supabase.from("partners").update({ match_keys: Array.from(keys) } as any).eq("workspace_id", wsId).eq("id", data.id);
     if (error) throw new Error(error.message);
     return { ok: true };
   });

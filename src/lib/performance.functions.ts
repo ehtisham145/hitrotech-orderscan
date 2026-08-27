@@ -3,6 +3,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/ext-auth-middleware";
 import type { PartnerRole } from "./partners.functions";
 import { slabsEffectiveOn } from "./brand-slabs";
+import { requireActiveWorkspaceId } from "./workspace-helpers";
 
 type Slab = { role: PartnerRole; min_count: number; max_count: number | null; rate_pkr: number; active: boolean };
 
@@ -25,13 +26,15 @@ export const getLeaderboard = createServerFn({ method: "GET" })
   .inputValidator((input: { month?: string; role?: PartnerRole | "all"; store_id?: string | "all" }) => input)
   .handler(async ({ data, context }) => {
     const monthStart = (data.month ?? new Date().toISOString().slice(0, 8) + "01").slice(0, 8) + "01";
+    const wsId = await requireActiveWorkspaceId(context.supabase, context.userId);
 
     const [partnersRes, slabsRes, rowsRes] = await Promise.all([
-      context.supabase.from("partners").select("id, name, role, store_id, active, phone, city"),
-      context.supabase.from("commission_slabs").select("role, min_count, max_count, rate_pkr, active, effective_from, effective_to"),
+      context.supabase.from("partners").select("id, name, role, store_id, active, phone, city").eq("workspace_id", wsId),
+      context.supabase.from("commission_slabs").select("role, min_count, max_count, rate_pkr, active, effective_from, effective_to").eq("workspace_id", wsId),
       context.supabase
         .from("extractions")
         .select("partner_id, commission_amount")
+        .eq("workspace_id", wsId)
         .eq("status", "success")
         .eq("is_duplicate", false)
         .eq("commission_month", monthStart)
@@ -86,23 +89,26 @@ export const getStorePerformance = createServerFn({ method: "GET" })
     monthEndDate.setMonth(monthEndDate.getMonth() + 1);
     const monthEnd = monthEndDate.toISOString().slice(0, 10);
 
+    const wsId = await requireActiveWorkspaceId(context.supabase, context.userId);
     const [allRes, commissionRes, partnersRes, storesRes] = await Promise.all([
       // Every activation this month by store (whether linked or not)
       context.supabase
         .from("extractions")
         .select("store_id, status, is_duplicate, needs_review, partner_id")
+        .eq("workspace_id", wsId)
         .gte("created_at", monthStart)
         .lt("created_at", monthEnd),
       // Linked ones only for commission sum
       context.supabase
         .from("extractions")
         .select("store_id, commission_amount, partner_id")
+        .eq("workspace_id", wsId)
         .eq("status", "success")
         .eq("is_duplicate", false)
         .eq("commission_month", monthStart)
         .not("partner_id", "is", null),
-      context.supabase.from("partners").select("id, store_id, active"),
-      context.supabase.from("stores").select("code"),
+      context.supabase.from("partners").select("id, store_id, active").eq("workspace_id", wsId),
+      context.supabase.from("stores").select("code").eq("workspace_id", wsId),
     ]);
 
 

@@ -3,6 +3,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/ext-auth-middleware";
 import type { PartnerRole } from "./partners.functions";
 import { slabsEffectiveOn } from "./brand-slabs";
+import { requireActiveWorkspaceId } from "./workspace-helpers";
 
 type Slab = { role: PartnerRole; min_count: number; max_count: number | null; rate_pkr: number; active: boolean };
 
@@ -16,25 +17,26 @@ export const getDashboardKpis = createServerFn({ method: "GET" })
     // days in current month
     const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
 
-    const { data: { user } } = await context.supabase.auth.getUser();
-    const wsId = user?.user_metadata?.workspace_id;
+    const wsId = await requireActiveWorkspaceId(context.supabase, context.userId);
 
     const [thisRes, lastRes, partnersRes, slabsRes, employeesRes] = await Promise.all([
       context.supabase
         .from("extractions")
         .select("partner_id, commission_amount, store_id, activation_date_parsed")
+        .eq("workspace_id", wsId)
         .eq("status", "success")
         .eq("is_duplicate", false)
         .eq("commission_month", thisMonthStart),
       context.supabase
         .from("extractions")
         .select("partner_id, commission_amount, activation_date_parsed")
+        .eq("workspace_id", wsId)
         .eq("status", "success")
         .eq("is_duplicate", false)
         .eq("commission_month", lastMonthStart),
-      context.supabase.from("partners").select("id, name, role, store_id, active"),
-      context.supabase.from("commission_slabs").select("role, min_count, max_count, rate_pkr, active, effective_from, effective_to").eq("active", true),
-      wsId ? context.supabase.from("employees").select("salary").eq("workspace_id", wsId) : Promise.resolve({ data: [] }),
+      context.supabase.from("partners").select("id, name, role, store_id, active").eq("workspace_id", wsId),
+      context.supabase.from("commission_slabs").select("role, min_count, max_count, rate_pkr, active, effective_from, effective_to").eq("workspace_id", wsId).eq("active", true),
+      context.supabase.from("employees").select("salary").eq("workspace_id", wsId),
     ]);
 
 

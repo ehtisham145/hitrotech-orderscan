@@ -45,8 +45,8 @@ export const deleteStore = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: { id: string }) => input)
   .handler(async ({ data, context }) => {
-    await assertActiveWorkspaceRole(context.supabase, context.userId, ["owner", "admin"]);
-    const { error } = await context.supabase.from("stores").delete().eq("id", data.id);
+    const wsId = await assertActiveWorkspaceRole(context.supabase, context.userId, ["owner", "admin"]);
+    const { error } = await context.supabase.from("stores").delete().eq("workspace_id", wsId).eq("id", data.id);
     if (error) throw new Error(error.message);
     return { ok: true };
   });

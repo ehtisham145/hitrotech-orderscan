@@ -3,6 +3,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/ext-auth-middleware";
 import type { PartnerRole } from "./partners.functions";
 import { slabsEffectiveOn } from "./brand-slabs";
+import { requireActiveWorkspaceId } from "./workspace-helpers";
 
 function monthStart(input?: string) {
   const s = (input ?? new Date().toISOString().slice(0, 8) + "01").slice(0, 8) + "01";
@@ -20,9 +21,10 @@ export const getPartnerStatement = createServerFn({ method: "GET" })
   .inputValidator((input: { partner_id: string; month?: string }) => input)
   .handler(async ({ data, context }) => {
     const month = monthStart(data.month);
+    const wsId = await requireActiveWorkspaceId(context.supabase, context.userId);
 
     const [partnerRes, actRes, payoutRes, slabsRes] = await Promise.all([
-      context.supabase.from("partners").select("*").eq("id", data.partner_id).maybeSingle(),
+      context.supabase.from("partners").select("*").eq("workspace_id", wsId).eq("id", data.partner_id).maybeSingle(),
       context.supabase
         .from("extractions")
         .select("id, phone_number, order_number, customer_name, activation_date, activation_date_parsed, store_id, package_name, commission_amount, is_duplicate, status")
@@ -37,7 +39,7 @@ export const getPartnerStatement = createServerFn({ method: "GET" })
         .eq("partner_id", data.partner_id)
         .eq("month", month)
         .maybeSingle(),
-      context.supabase.from("commission_slabs").select("role, min_count, max_count, rate_pkr, active, effective_from, effective_to").eq("active", true),
+      context.supabase.from("commission_slabs").select("role, min_count, max_count, rate_pkr, active, effective_from, effective_to").eq("workspace_id", wsId).eq("active", true),
     ]);
 
     const partner = partnerRes.data;
@@ -83,9 +85,10 @@ export const getPartnerHistory = createServerFn({ method: "GET" })
     const now = new Date();
     const currentMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
     const startMonth = addMonths(currentMonth, -(months - 1));
+    const wsId = await requireActiveWorkspaceId(context.supabase, context.userId);
 
     const [partnerRes, actRes, payoutRes] = await Promise.all([
-      context.supabase.from("partners").select("*").eq("id", data.partner_id).maybeSingle(),
+      context.supabase.from("partners").select("*").eq("workspace_id", wsId).eq("id", data.partner_id).maybeSingle(),
       context.supabase
         .from("extractions")
         .select("commission_month, commission_amount, activation_date_parsed")
