@@ -2,6 +2,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/ext-auth-middleware";
 import { assertActiveWorkspaceRole } from "./authz.server";
+import { requireActiveWorkspaceId } from "./workspace-helpers";
 import type { PartnerRole } from "./partners.functions";
 
 const WRITE_ROLES = ["owner", "admin", "manager"] as const;
@@ -24,9 +25,11 @@ export const listSlabs = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     // Role-default slabs only (partner_id is NULL)
+    const wsId = await requireActiveWorkspaceId(context.supabase, context.userId);
     const { data, error } = await context.supabase
       .from("commission_slabs")
       .select("*")
+      .eq("workspace_id", wsId)
       .is("partner_id", null)
       .order("role", { ascending: true })
       .order("min_count", { ascending: true });
@@ -38,9 +41,11 @@ export const listPartnerSlabs = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: { partner_id: string }) => input)
   .handler(async ({ data, context }) => {
+    const wsId = await requireActiveWorkspaceId(context.supabase, context.userId);
     const { data: rows, error } = await context.supabase
       .from("commission_slabs")
       .select("*")
+      .eq("workspace_id", wsId)
       .eq("partner_id", data.partner_id)
       .order("min_count", { ascending: true });
     if (error) throw new Error(error.message);
@@ -92,8 +97,8 @@ export const deleteSlab = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: { id: string }) => input)
   .handler(async ({ data, context }) => {
-    await assertActiveWorkspaceRole(context.supabase, context.userId, [...WRITE_ROLES]);
-    const { error } = await context.supabase.from("commission_slabs").delete().eq("id", data.id);
+    const wsIdDel = await assertActiveWorkspaceRole(context.supabase, context.userId, [...WRITE_ROLES]);
+    const { error } = await context.supabase.from("commission_slabs").delete().eq("workspace_id", wsIdDel).eq("id", data.id);
     if (error) throw new Error(error.message);
     return { ok: true };
   });
@@ -101,9 +106,11 @@ export const deleteSlab = createServerFn({ method: "POST" })
 export const listUnassigned = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
+    const wsIdUnassigned = await requireActiveWorkspaceId(context.supabase, context.userId);
     const { data, error } = await context.supabase
       .from("extractions")
       .select("id, customer_name, phone_number, employee_name, reference, branch_name, store_id, activation_date, created_at, batch_id")
+      .eq("workspace_id", wsIdUnassigned)
       .eq("status", "success")
       .eq("is_duplicate", false)
       .is("partner_id", null)
@@ -117,10 +124,14 @@ export const assignExtractionToPartner = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: { extraction_id: string; partner_id: string; add_match_key?: string | null }) => input)
   .handler(async ({ data, context }) => {
-    await assertActiveWorkspaceRole(context.supabase, context.userId, [...WRITE_ROLES]);
+    const wsId = await assertActiveWorkspaceRole(context.supabase, context.userId, [...WRITE_ROLES]);
+    const { data: partnerOwner } = await context.supabase
+      .from("partners").select("id").eq("workspace_id", wsId).eq("id", data.partner_id).maybeSingle();
+    if (!partnerOwner) throw new Error("Partner not found in this workspace");
     const { data: ex } = await context.supabase
       .from("extractions")
       .select("activation_date_parsed")
+      .eq("workspace_id", wsId)
       .eq("id", data.extraction_id)
       .single();
     const parsed = (ex as { activation_date_parsed?: string | null } | null)?.activation_date_parsed;
@@ -131,15 +142,16 @@ export const assignExtractionToPartner = createServerFn({ method: "POST" })
       .from("extractions")
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       .update({ partner_id: data.partner_id, commission_month: monthStart } as any)
+      .eq("workspace_id", wsId)
       .eq("id", data.extraction_id);
     if (error) throw new Error(error.message);
 
     if (data.add_match_key && data.add_match_key.trim()) {
-      const { data: p } = await context.supabase.from("partners").select("match_keys").eq("id", data.partner_id).single();
+      const { data: p } = await context.supabase.from("partners").select("match_keys").eq("workspace_id", wsId).eq("id", data.partner_id).single();
       const keys = new Set<string>(((p?.match_keys as string[] | null) ?? []).map((k) => k.trim()).filter(Boolean));
       keys.add(data.add_match_key.trim());
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await context.supabase.from("partners").update({ match_keys: Array.from(keys) } as any).eq("id", data.partner_id);
+      await context.supabase.from("partners").update({ match_keys: Array.from(keys) } as any).eq("workspace_id", wsId).eq("id", data.partner_id);
     }
     return { ok: true };
   });
@@ -149,11 +161,13 @@ export const getCommissionSummary = createServerFn({ method: "GET" })
   .inputValidator((input: { month?: string }) => input)
   .handler(async ({ data, context }) => {
     const monthStart = (data.month ?? new Date().toISOString().slice(0, 8) + "01").slice(0, 8) + "01";
+    const wsId = await requireActiveWorkspaceId(context.supabase, context.userId);
 
     const [{ data: rows }, { count: unassigned }, { data: partners }] = await Promise.all([
       context.supabase
         .from("extractions")
         .select("partner_id, commission_amount")
+        .eq("workspace_id", wsId)
         .eq("status", "success")
         .eq("is_duplicate", false)
         .eq("commission_month", monthStart)
@@ -161,10 +175,11 @@ export const getCommissionSummary = createServerFn({ method: "GET" })
       context.supabase
         .from("extractions")
         .select("id", { count: "exact", head: true })
+        .eq("workspace_id", wsId)
         .eq("status", "success")
         .eq("is_duplicate", false)
         .is("partner_id", null),
-      context.supabase.from("partners").select("id, name, role, store_id"),
+      context.supabase.from("partners").select("id, name, role, store_id").eq("workspace_id", wsId),
     ]);
 
     const partnerMap = new Map<string, { name: string; role: string; store_id: string | null }>();
