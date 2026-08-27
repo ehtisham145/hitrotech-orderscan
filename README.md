@@ -8,6 +8,7 @@ reporting. The admin panel and the partner-facing portal are the same
 application, gated by role.
 
 
+
 ### Table of contents
 
 - [What it does](#what-it-does)
