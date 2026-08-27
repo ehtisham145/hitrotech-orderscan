@@ -22,6 +22,8 @@ application, gated by role.
 
 ## What it does
 
+
+
 1. A user uploads an order image/screenshot (individually or as a batch —
    ZIP, PDF, or a whole folder are also accepted).
 2. The image is sent to the **OCR service** (`ocr-service/`, Python +
