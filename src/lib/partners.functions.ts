@@ -2,6 +2,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/ext-auth-middleware";
 import { assertActiveWorkspaceRole } from "./authz.server";
+import { requireActiveWorkspaceId } from "./workspace-helpers";
 
 const WRITE_ROLES = ["owner", "admin", "manager"] as const;
 
@@ -10,9 +11,11 @@ export type PartnerRole = "franchise_owner" | "retailer" | "franchise_as_retaile
 export const listPartners = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
+    const wsId = await requireActiveWorkspaceId(context.supabase, context.userId);
     const { data, error } = await context.supabase
       .from("partners")
       .select("*")
+      .eq("workspace_id", wsId)
       .order("active", { ascending: false })
       .order("name", { ascending: true });
     if (error) throw new Error(error.message);
@@ -23,7 +26,8 @@ export const getPartner = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: { id: string }) => input)
   .handler(async ({ data, context }) => {
-    const { data: p, error } = await context.supabase.from("partners").select("*").eq("id", data.id).maybeSingle();
+    const wsId = await requireActiveWorkspaceId(context.supabase, context.userId);
+    const { data: p, error } = await context.supabase.from("partners").select("*").eq("workspace_id", wsId).eq("id", data.id).maybeSingle();
     if (error) throw new Error(error.message);
     return p;
   });
