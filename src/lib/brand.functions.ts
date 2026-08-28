@@ -3,6 +3,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/ext-auth-middleware";
 import { assertActiveWorkspaceRole } from "./authz.server";
 import { computeSlabAmount, type Slab } from "./brand-slabs";
+import { requireActiveWorkspaceId } from "./workspace-helpers";
 
 const WRITE_ROLES = ["owner", "admin"] as const;
 
@@ -112,20 +113,19 @@ export const getAgencyEarnings = createServerFn({ method: "GET" })
   .handler(async ({ data, context }) => {
     const month = monthStart(data.month);
 
-    // Current workspace ID from JWT metadata
-    const { data: { user } } = await context.supabase.auth.getUser();
-    const wsId = user?.user_metadata?.workspace_id;
+    const wsId = await requireActiveWorkspaceId(context.supabase, context.userId);
 
     const [brandsRes, extRes, partnersRes, employeesRes] = await Promise.all([
-      (context.supabase as any).from("brands").select("*").order("created_at", { ascending: true }),
+      (context.supabase as any).from("brands").select("*").eq("workspace_id", wsId).order("created_at", { ascending: true }),
       context.supabase
         .from("extractions")
         .select("partner_id, commission_amount")
+        .eq("workspace_id", wsId)
         .eq("status", "success")
         .eq("is_duplicate", false)
         .eq("commission_month", month),
-      context.supabase.from("partners").select("id, name, role, store_id"),
-      wsId ? context.supabase.from("employees").select("salary").eq("workspace_id", wsId) : Promise.resolve({ data: [] }),
+      context.supabase.from("partners").select("id, name, role, store_id").eq("workspace_id", wsId),
+      context.supabase.from("employees").select("salary").eq("workspace_id", wsId),
     ]);
 
 
