@@ -135,9 +135,11 @@ export const processExtractionNow = createServerFn({ method: "POST" })
 
     // RLS verifies the signed-in user can access the row before the extraction
     // routine touches storage or writes results.
+    const wsId = await requireActiveWorkspaceId(context.supabase, context.userId);
     const { data: row, error } = await context.supabase
       .from("extractions")
       .select("id")
+      .eq("workspace_id", wsId)
       .eq("id", extractionId)
       .maybeSingle();
     if (error) throw new Error(error.message);
@@ -154,6 +156,7 @@ export const processExtractionNow = createServerFn({ method: "POST" })
       await context.supabase
         .from("extractions")
         .update({ status: "pending", error_message: `${result.error} — retrying automatically`, updated_at: nowIso() })
+        .eq("workspace_id", wsId)
         .eq("id", extractionId)
         .in("status", ["failed", "processing"]);
     }
@@ -177,9 +180,11 @@ export const keepBatchRowsFresh = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     if (!data.batch_id) return { refreshed: 0 };
 
+    const wsId = await requireActiveWorkspaceId(context.supabase, context.userId);
     const { data: rows, error } = await context.supabase
       .from("extractions")
       .update({ updated_at: new Date().toISOString() })
+      .eq("workspace_id", wsId)
       .eq("batch_id", data.batch_id)
       .eq("status", "pending")
       .select("id");
