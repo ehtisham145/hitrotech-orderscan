@@ -1,7 +1,7 @@
 // Monthly partner payout generation and tracking.
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/ext-auth-middleware";
-import { workspaceIdForPartner } from "./workspace-helpers";
+import { workspaceIdForPartner, requireActiveWorkspaceId } from "./workspace-helpers";
 import { assertActiveWorkspaceRole } from "./authz.server";
 import type { PartnerRole } from "./partners.functions";
 
@@ -17,17 +17,19 @@ export const getPayoutSummary = createServerFn({ method: "GET" })
   .inputValidator((input: { month?: string }) => input)
   .handler(async ({ data, context }) => {
     const month = monthStart(data.month);
+    const wsId = await requireActiveWorkspaceId(context.supabase, context.userId);
 
     const [partnersRes, extRes, payoutsRes] = await Promise.all([
-      context.supabase.from("partners").select("id, name, role, store_id, phone, cnic, active"),
+      context.supabase.from("partners").select("id, name, role, store_id, phone, cnic, active").eq("workspace_id", wsId),
       context.supabase
         .from("extractions")
         .select("partner_id, commission_amount")
+        .eq("workspace_id", wsId)
         .eq("status", "success")
         .eq("is_duplicate", false)
         .eq("commission_month", month)
         .not("partner_id", "is", null),
-      context.supabase.from("partner_payouts").select("*").eq("month", month),
+      context.supabase.from("partner_payouts").select("*").eq("workspace_id", wsId).eq("month", month),
     ]);
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -138,7 +140,14 @@ export const markPayoutStatus = createServerFn({ method: "POST" })
       paid_by: data.status === "paid" ? context.userId : null,
       ...(data.payment_reference !== undefined ? { payment_reference: data.payment_reference } : {}),
     };
-    const { error } = await context.supabase.from("partner_payouts").update(patch).eq("id", data.payout_id);
+    const wsId = await requireActiveWorkspaceId(context.supabase, context.userId);
+    const { data: updated, error } = await context.supabase
+      .from("partner_payouts")
+      .update(patch)
+      .eq("workspace_id", wsId)
+      .eq("id", data.payout_id)
+      .select("id");
+    if (!error && (!updated || updated.length === 0)) throw new Error("Payout not found in the active workspace");
     if (error) throw new Error(error.message);
     return { ok: true };
   });
@@ -149,10 +158,12 @@ export const generatePayoutsForMonth = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     await assertActiveWorkspaceRole(context.supabase, context.userId, [...PAYOUT_ROLES]);
     const month = monthStart(data.month);
+    const wsId = await requireActiveWorkspaceId(context.supabase, context.userId);
 
     const { data: rows } = await context.supabase
       .from("extractions")
       .select("partner_id, commission_amount")
+      .eq("workspace_id", wsId)
       .eq("status", "success")
       .eq("is_duplicate", false)
       .eq("commission_month", month)
@@ -169,6 +180,7 @@ export const generatePayoutsForMonth = createServerFn({ method: "POST" })
     const { data: existing } = await context.supabase
       .from("partner_payouts")
       .select("partner_id, status")
+      .eq("workspace_id", wsId)
       .eq("month", month);
     const existingMap = new Map<string, string>();
     for (const e of (existing ?? []) as Array<{ partner_id: string; status: string }>) {
@@ -223,9 +235,11 @@ export const bulkMarkPayoutsPaid = createServerFn({ method: "POST" })
     const month = monthStart(data.month);
 
     // Gather partners with pending activity for the month
+    const bulkWsId = await requireActiveWorkspaceId(context.supabase, context.userId);
     const { data: exts } = await context.supabase
       .from("extractions")
       .select("partner_id, commission_amount")
+      .eq("workspace_id", bulkWsId)
       .eq("status", "success")
       .eq("is_duplicate", false)
       .eq("commission_month", month)

@@ -39,7 +39,7 @@ export const upsertBrand = createServerFn({ method: "POST" })
     const wsId = await assertActiveWorkspaceRole(context.supabase, context.userId, [...WRITE_ROLES]);
     if (data.id) {
       const { id, ...rest } = data;
-      const { error } = await (context.supabase as any).from("brands").update(rest).eq("id", id);
+      const { error } = await (context.supabase as any).from("brands").update(rest).eq("workspace_id", wsId).eq("id", id);
       if (error) return { ok: false as const, error: error.message };
       return { ok: true as const, id };
     }
@@ -57,7 +57,7 @@ export const deleteBrand = createServerFn({ method: "POST" })
   .inputValidator((input: { id: string }) => input)
   .handler(async ({ data, context }) => {
     await assertActiveWorkspaceRole(context.supabase, context.userId, [...WRITE_ROLES]);
-    const { error } = await (context.supabase as any).from("brands").delete().eq("id", data.id);
+    const { error } = await (context.supabase as any).from("brands").delete().eq("workspace_id", wsId).eq("id", data.id);
     if (error) throw new Error(error.message);
     return { ok: true };
   });
@@ -84,7 +84,7 @@ export const upsertBrandSlab = createServerFn({ method: "POST" })
     const wsId = await assertActiveWorkspaceRole(context.supabase, context.userId, [...WRITE_ROLES]);
     if (data.id) {
       const { id, ...rest } = data;
-      const { error } = await (context.supabase as any).from("brand_slabs").update(rest).eq("id", id);
+      const { error } = await (context.supabase as any).from("brand_slabs").update(rest).eq("workspace_id", wsId).eq("id", id);
       if (error) return { ok: false as const, error: error.message };
       return { ok: true as const };
     }
@@ -98,7 +98,7 @@ export const deleteBrandSlab = createServerFn({ method: "POST" })
   .inputValidator((input: { id: string }) => input)
   .handler(async ({ data, context }) => {
     await assertActiveWorkspaceRole(context.supabase, context.userId, [...WRITE_ROLES]);
-    const { error } = await (context.supabase as any).from("brand_slabs").delete().eq("id", data.id);
+    const { error } = await (context.supabase as any).from("brand_slabs").delete().eq("workspace_id", wsId).eq("id", data.id);
     if (error) throw new Error(error.message);
     return { ok: true };
   });
