@@ -55,7 +55,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const switchM = useMutation({
     mutationFn: async (id: string) => setFn({ data: { workspaceId: id } }),
     onSuccess: async () => {
-      await qc.invalidateQueries({ queryKey: ["active-workspace"] });
+      // Drop every cached query: nothing from the previous account may survive
+      // the switch, even for a frame.
+      qc.clear();
       // Refresh all workspace-scoped data
       window.location.reload();
     },
