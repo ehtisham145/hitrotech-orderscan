@@ -68,6 +68,7 @@ export const listAnomalies = createServerFn({ method: "GET" })
     const monthEnd = new Date(m);
     monthEnd.setMonth(monthEnd.getMonth() + 1);
     const endStr = monthEnd.toISOString().slice(0, 10);
+    const wsId = await requireActiveWorkspaceId(context.supabase, context.userId);
 
     // Rows flagged by the DB trigger
     const { data: flagged, error } = await context.supabase
@@ -75,6 +76,7 @@ export const listAnomalies = createServerFn({ method: "GET" })
       .select(
         "id, batch_id, customer_name, phone_number, order_number, store_id, activation_date, activation_date_parsed, employee_name, partner_id, commission_month, anomalies, created_at",
       )
+      .eq("workspace_id", wsId)
       .gte("created_at", m)
       .lt("created_at", endStr)
       .not("anomalies", "eq", "{}")
@@ -86,6 +88,7 @@ export const listAnomalies = createServerFn({ method: "GET" })
     const { data: pool } = await context.supabase
       .from("extractions")
       .select("id, phone_number, created_at, customer_name, store_id, employee_name, batch_id, order_number, activation_date, partner_id, commission_month, anomalies")
+      .eq("workspace_id", wsId)
       .eq("status", "success")
       .eq("is_duplicate", false)
       .eq("commission_month", m)
@@ -268,19 +271,22 @@ export const getReconciliation = createServerFn({ method: "GET" })
   .inputValidator((input: { month: string }) => input)
   .handler(async ({ data, context }) => {
     const m = monthStart(data.month);
+    const wsId = await requireActiveWorkspaceId(context.supabase, context.userId);
     const [payoutsRes, extRes, partnersRes] = await Promise.all([
       context.supabase
         .from("partner_payouts")
         .select("id, partner_id, activations_count, amount_pkr, snapshot_count, snapshot_amount, snapshot_at, status")
+        .eq("workspace_id", wsId)
         .eq("month", m),
       context.supabase
         .from("extractions")
         .select("partner_id, commission_amount")
+        .eq("workspace_id", wsId)
         .eq("status", "success")
         .eq("is_duplicate", false)
         .eq("commission_month", m)
         .not("partner_id", "is", null),
-      context.supabase.from("partners").select("id, name"),
+      context.supabase.from("partners").select("id, name").eq("workspace_id", wsId),
     ]);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const payouts = (payoutsRes.data ?? []) as any[];
@@ -339,18 +345,20 @@ export const exportMonthlyBackup = createServerFn({ method: "POST" })
     const { data: allowed } = await context.supabase.rpc("is_manager_or_admin", { _user_id: context.userId });
     if (!allowed) throw new Error("Forbidden");
 
+    const exportWsId = await requireActiveWorkspaceId(context.supabase, context.userId);
     const [extRes, payoutsRes, partnersRes, batchesRes, slabsRes] = await Promise.all([
       context.supabase
         .from("extractions")
         .select("*")
+        .eq("workspace_id", exportWsId)
         .gte("created_at", m)
         .lt("created_at", monthEnd)
         .order("created_at", { ascending: true })
         .limit(20000),
-      context.supabase.from("partner_payouts").select("*").eq("month", m),
-      context.supabase.from("partners").select("id, name, role, store_id, phone, cnic"),
-      context.supabase.from("batches").select("id, name, created_at").gte("created_at", m).lt("created_at", monthEnd),
-      context.supabase.from("commission_slabs").select("role, min_count, max_count, rate_pkr, active, effective_from, effective_to"),
+      context.supabase.from("partner_payouts").select("*").eq("workspace_id", exportWsId).eq("month", m),
+      context.supabase.from("partners").select("id, name, role, store_id, phone, cnic").eq("workspace_id", exportWsId),
+      context.supabase.from("batches").select("id, name, created_at").eq("workspace_id", exportWsId).gte("created_at", m).lt("created_at", monthEnd),
+      context.supabase.from("commission_slabs").select("role, min_count, max_count, rate_pkr, active, effective_from, effective_to").eq("workspace_id", exportWsId),
     ]);
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
