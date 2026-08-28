@@ -27,8 +27,8 @@ export const getPartnerStatement = createServerFn({ method: "GET" })
       context.supabase.from("partners").select("*").eq("workspace_id", wsId).eq("id", data.partner_id).maybeSingle(),
       context.supabase
         .from("extractions")
-        .eq("workspace_id", wsId)
         .select("id, phone_number, order_number, customer_name, activation_date, activation_date_parsed, store_id, package_name, commission_amount, is_duplicate, status")
+        .eq("workspace_id", wsId)
         .eq("partner_id", data.partner_id)
         .eq("commission_month", month)
         .eq("status", "success")
@@ -36,8 +36,8 @@ export const getPartnerStatement = createServerFn({ method: "GET" })
         .order("activation_date_parsed", { ascending: true, nullsFirst: false }),
       context.supabase
         .from("partner_payouts")
-        .eq("workspace_id", wsId)
         .select("*")
+        .eq("workspace_id", wsId)
         .eq("partner_id", data.partner_id)
         .eq("month", month)
         .maybeSingle(),
@@ -93,16 +93,16 @@ export const getPartnerHistory = createServerFn({ method: "GET" })
       context.supabase.from("partners").select("*").eq("workspace_id", wsId).eq("id", data.partner_id).maybeSingle(),
       context.supabase
         .from("extractions")
-        .eq("workspace_id", wsId)
         .select("commission_month, commission_amount, activation_date_parsed")
+        .eq("workspace_id", wsId)
         .eq("partner_id", data.partner_id)
         .eq("status", "success")
         .eq("is_duplicate", false)
         .gte("commission_month", startMonth),
       context.supabase
         .from("partner_payouts")
-        .eq("workspace_id", wsId)
         .select("month, status, amount_pkr, activations_count, paid_at, payment_reference")
+        .eq("workspace_id", wsId)
         .eq("partner_id", data.partner_id)
         .gte("month", startMonth),
     ]);

@@ -27,6 +27,7 @@ export const listBrands = createServerFn({ method: "GET" })
     const { data, error } = await (context.supabase as any)
       .from("brands")
       .select("*")
+      .eq("workspace_id", await requireActiveWorkspaceId(context.supabase, context.userId))
       .order("created_at", { ascending: true });
     if (error) throw new Error(error.message);
     return (data ?? []) as BrandRow[];
@@ -56,7 +57,7 @@ export const deleteBrand = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: { id: string }) => input)
   .handler(async ({ data, context }) => {
-    await assertActiveWorkspaceRole(context.supabase, context.userId, [...WRITE_ROLES]);
+    const wsId = await assertActiveWorkspaceRole(context.supabase, context.userId, [...WRITE_ROLES]);
     const { error } = await (context.supabase as any).from("brands").delete().eq("workspace_id", wsId).eq("id", data.id);
     if (error) throw new Error(error.message);
     return { ok: true };
@@ -69,6 +70,7 @@ export const listBrandSlabs = createServerFn({ method: "GET" })
     const { data: rows, error } = await (context.supabase as any)
       .from("brand_slabs")
       .select("*")
+      .eq("workspace_id", await requireActiveWorkspaceId(context.supabase, context.userId))
       .eq("brand_id", data.brand_id)
       .order("min_count", { ascending: true });
     if (error) throw new Error(error.message);
@@ -97,7 +99,7 @@ export const deleteBrandSlab = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: { id: string }) => input)
   .handler(async ({ data, context }) => {
-    await assertActiveWorkspaceRole(context.supabase, context.userId, [...WRITE_ROLES]);
+    const wsId = await assertActiveWorkspaceRole(context.supabase, context.userId, [...WRITE_ROLES]);
     const { error } = await (context.supabase as any).from("brand_slabs").delete().eq("workspace_id", wsId).eq("id", data.id);
     if (error) throw new Error(error.message);
     return { ok: true };
