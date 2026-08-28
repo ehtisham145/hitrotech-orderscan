@@ -3,6 +3,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/ext-auth-middleware";
 import { inngest } from "@/lib/inngest.server";
+import { requireActiveWorkspaceId } from "./workspace-helpers";
 
 export const queueExtractions = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -16,10 +17,12 @@ export const queueExtractions = createServerFn({ method: "POST" })
 
     const requested = Array.from(new Set(data.extraction_ids ?? [])).filter(Boolean);
     if (requested.length === 0) return { queued: 0, failed_to_queue: 0 };
-    // Verify caller owns these rows.
+    // Verify caller owns these rows (active workspace only).
+    const wsId = await requireActiveWorkspaceId(context.supabase, context.userId);
     const { data: rows, error } = await context.supabase
       .from("extractions")
       .select("id, batch_id, status, updated_at")
+      .eq("workspace_id", wsId)
       .in("id", requested);
     if (error) throw new Error(error.message);
     const ids = (rows ?? [])
@@ -41,6 +44,7 @@ export const queueExtractions = createServerFn({ method: "POST" })
         const { data: batchExtractions } = await context.supabase
           .from("extractions")
           .select("status, is_duplicate")
+          .eq("workspace_id", wsId)
           .eq("batch_id", batchId);
         if (!batchExtractions) continue;
 
@@ -66,6 +70,7 @@ export const queueExtractions = createServerFn({ method: "POST" })
         await context.supabase
           .from("batches")
           .update({ processed_count: processed, failed_count: failed, duplicate_count: dups, status: nextStatus, updated_at: nowIso() })
+          .eq("workspace_id", wsId)
           .eq("id", batchId);
       }
     };
@@ -89,7 +94,7 @@ export const queueExtractions = createServerFn({ method: "POST" })
       .update({ status: "pending", error_message: null, updated_at: nowIso() })
       .in("id", ids);
     if (batchIds.length > 0) {
-      await context.supabase.from("batches").update({ status: "processing", updated_at: nowIso() }).in("id", batchIds);
+      await context.supabase.from("batches").update({ status: "processing", updated_at: nowIso() }).eq("workspace_id", wsId).in("id", batchIds);
     }
 
     if (!process.env.INNGEST_EVENT_KEY && !process.env.INNGEST_SIGNING_KEY) {
@@ -130,9 +135,11 @@ export const processExtractionNow = createServerFn({ method: "POST" })
 
     // RLS verifies the signed-in user can access the row before the extraction
     // routine touches storage or writes results.
+    const wsId = await requireActiveWorkspaceId(context.supabase, context.userId);
     const { data: row, error } = await context.supabase
       .from("extractions")
       .select("id")
+      .eq("workspace_id", wsId)
       .eq("id", extractionId)
       .maybeSingle();
     if (error) throw new Error(error.message);
@@ -149,6 +156,7 @@ export const processExtractionNow = createServerFn({ method: "POST" })
       await context.supabase
         .from("extractions")
         .update({ status: "pending", error_message: `${result.error} — retrying automatically`, updated_at: nowIso() })
+        .eq("workspace_id", wsId)
         .eq("id", extractionId)
         .in("status", ["failed", "processing"]);
     }
@@ -172,9 +180,11 @@ export const keepBatchRowsFresh = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     if (!data.batch_id) return { refreshed: 0 };
 
+    const wsId = await requireActiveWorkspaceId(context.supabase, context.userId);
     const { data: rows, error } = await context.supabase
       .from("extractions")
       .update({ updated_at: new Date().toISOString() })
+      .eq("workspace_id", wsId)
       .eq("batch_id", data.batch_id)
       .eq("status", "pending")
       .select("id");

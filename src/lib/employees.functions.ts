@@ -13,10 +13,7 @@ export type EmployeeRole = "bdo" | "asm" | "rsm";
 export const getEmployeeUsage = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    // Current workspace ID from JWT metadata
-    const { data: { user } } = await context.supabase.auth.getUser();
-    const wsId = user?.user_metadata?.workspace_id;
-    if (!wsId) throw new Error("No active workspace");
+    const wsId = await requireActiveWorkspaceId(context.supabase, context.userId);
 
     const { count, error: countError } = await context.supabase
       .from("employees")

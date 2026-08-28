@@ -3,6 +3,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/ext-auth-middleware";
 import { assertActiveWorkspaceRole } from "./authz.server";
 import { computeSlabAmount, type Slab } from "./brand-slabs";
+import { requireActiveWorkspaceId } from "./workspace-helpers";
 
 const WRITE_ROLES = ["owner", "admin"] as const;
 
@@ -26,6 +27,7 @@ export const listBrands = createServerFn({ method: "GET" })
     const { data, error } = await (context.supabase as any)
       .from("brands")
       .select("*")
+      .eq("workspace_id", await requireActiveWorkspaceId(context.supabase, context.userId))
       .order("created_at", { ascending: true });
     if (error) throw new Error(error.message);
     return (data ?? []) as BrandRow[];
@@ -38,7 +40,7 @@ export const upsertBrand = createServerFn({ method: "POST" })
     const wsId = await assertActiveWorkspaceRole(context.supabase, context.userId, [...WRITE_ROLES]);
     if (data.id) {
       const { id, ...rest } = data;
-      const { error } = await (context.supabase as any).from("brands").update(rest).eq("id", id);
+      const { error } = await (context.supabase as any).from("brands").update(rest).eq("workspace_id", wsId).eq("id", id);
       if (error) return { ok: false as const, error: error.message };
       return { ok: true as const, id };
     }
@@ -55,8 +57,8 @@ export const deleteBrand = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: { id: string }) => input)
   .handler(async ({ data, context }) => {
-    await assertActiveWorkspaceRole(context.supabase, context.userId, [...WRITE_ROLES]);
-    const { error } = await (context.supabase as any).from("brands").delete().eq("id", data.id);
+    const wsId = await assertActiveWorkspaceRole(context.supabase, context.userId, [...WRITE_ROLES]);
+    const { error } = await (context.supabase as any).from("brands").delete().eq("workspace_id", wsId).eq("id", data.id);
     if (error) throw new Error(error.message);
     return { ok: true };
   });
@@ -68,6 +70,7 @@ export const listBrandSlabs = createServerFn({ method: "GET" })
     const { data: rows, error } = await (context.supabase as any)
       .from("brand_slabs")
       .select("*")
+      .eq("workspace_id", await requireActiveWorkspaceId(context.supabase, context.userId))
       .eq("brand_id", data.brand_id)
       .order("min_count", { ascending: true });
     if (error) throw new Error(error.message);
@@ -83,7 +86,7 @@ export const upsertBrandSlab = createServerFn({ method: "POST" })
     const wsId = await assertActiveWorkspaceRole(context.supabase, context.userId, [...WRITE_ROLES]);
     if (data.id) {
       const { id, ...rest } = data;
-      const { error } = await (context.supabase as any).from("brand_slabs").update(rest).eq("id", id);
+      const { error } = await (context.supabase as any).from("brand_slabs").update(rest).eq("workspace_id", wsId).eq("id", id);
       if (error) return { ok: false as const, error: error.message };
       return { ok: true as const };
     }
@@ -96,8 +99,8 @@ export const deleteBrandSlab = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: { id: string }) => input)
   .handler(async ({ data, context }) => {
-    await assertActiveWorkspaceRole(context.supabase, context.userId, [...WRITE_ROLES]);
-    const { error } = await (context.supabase as any).from("brand_slabs").delete().eq("id", data.id);
+    const wsId = await assertActiveWorkspaceRole(context.supabase, context.userId, [...WRITE_ROLES]);
+    const { error } = await (context.supabase as any).from("brand_slabs").delete().eq("workspace_id", wsId).eq("id", data.id);
     if (error) throw new Error(error.message);
     return { ok: true };
   });
@@ -112,20 +115,19 @@ export const getAgencyEarnings = createServerFn({ method: "GET" })
   .handler(async ({ data, context }) => {
     const month = monthStart(data.month);
 
-    // Current workspace ID from JWT metadata
-    const { data: { user } } = await context.supabase.auth.getUser();
-    const wsId = user?.user_metadata?.workspace_id;
+    const wsId = await requireActiveWorkspaceId(context.supabase, context.userId);
 
     const [brandsRes, extRes, partnersRes, employeesRes] = await Promise.all([
-      (context.supabase as any).from("brands").select("*").order("created_at", { ascending: true }),
+      (context.supabase as any).from("brands").select("*").eq("workspace_id", wsId).order("created_at", { ascending: true }),
       context.supabase
         .from("extractions")
         .select("partner_id, commission_amount")
+        .eq("workspace_id", wsId)
         .eq("status", "success")
         .eq("is_duplicate", false)
         .eq("commission_month", month),
-      context.supabase.from("partners").select("id, name, role, store_id"),
-      wsId ? context.supabase.from("employees").select("salary").eq("workspace_id", wsId) : Promise.resolve({ data: [] }),
+      context.supabase.from("partners").select("id, name, role, store_id").eq("workspace_id", wsId),
+      context.supabase.from("employees").select("salary").eq("workspace_id", wsId),
     ]);
 
 
