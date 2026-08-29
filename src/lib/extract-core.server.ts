@@ -12,6 +12,7 @@ const SYSTEM_PROMPT = `You are an expert at extracting structured data from tele
   "data": {
     "customer_name": string|null,
     "phone_number": string|null,
+    "alternative_contact": string|null,
     "current_network": string|null,
     "sim_type": string|null,
     "number_type": string|null,
