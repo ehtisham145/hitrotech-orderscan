@@ -5,6 +5,7 @@ import { requireActiveWorkspaceId } from "./workspace-helpers";
 import { z } from "zod";
 import { startOfMonth, endOfMonth, format } from "date-fns";
 import { getPlan } from "./plans";
+import { COMPENSATION_TYPES, monthlyEarnings } from "./employee-pay";
 
 const WRITE_ROLES = ["owner", "admin", "manager"] as const;
 
@@ -205,6 +206,13 @@ export const getEmployeePerformance = createServerFn({ method: "GET" })
       efficiency: 0, // Placeholder
     };
 
+    const earnings = monthlyEarnings({
+      compensation_type: employee.compensation_type,
+      salary: employee.salary,
+      commission_per_activation: employee.commission_per_activation,
+      activations: activations.length,
+    });
+
     return {
       employee,
       month: monthStr,
@@ -212,10 +220,12 @@ export const getEmployeePerformance = createServerFn({ method: "GET" })
       target: employee.target_activations || 0,
       attainment: kpis.attainment,
       kpis,
+      earnings,
       daily: Array.from(dailyMap.entries()).map(([date, count]) => ({ date, count })),
       networks: Array.from(networkMap.entries()).map(([name, count]) => ({ name, count })),
     };
   });
+
 
 export const getEmployeeTeamPerformance = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
