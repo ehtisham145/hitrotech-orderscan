@@ -672,7 +672,7 @@ function BatchDetail() {
                   {EXTRACT_FIELDS.slice(0, 10).map((f) => (
                     <td key={f} className="p-1">
                       <EditableCell
-                        value={(r[f] as string | null) ?? ""}
+                        value={((r as Record<string, unknown>)[f] as string | null) ?? ""}
                         confidence={(r.confidence as Record<string, number> | null)?.[f]}
                         onSave={(v) => updateField(r.id, f, v)}
                         disabled={r.status !== "success"}
@@ -687,7 +687,7 @@ function BatchDetail() {
                           <div key={f}>
                             <div className="text-[9px] uppercase font-bold text-slate-400">{FIELD_LABELS[f]}</div>
                             <EditableCell
-                              value={(r[f] as string | null) ?? ""}
+                              value={((r as Record<string, unknown>)[f] as string | null) ?? ""}
                               confidence={(r.confidence as Record<string, number> | null)?.[f]}
                               onSave={(v) => updateField(r.id, f, v)}
                               disabled={r.status !== "success"}
