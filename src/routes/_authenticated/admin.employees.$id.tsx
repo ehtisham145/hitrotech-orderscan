@@ -1099,8 +1099,6 @@ function StatCard({ label, value, icon: Icon, tone = "default", hint }: { label:
           <p className="text-lg font-black">{value}</p>
           {hint ? <p className="text-[10px] opacity-60 truncate">{hint}</p> : null}
         </div>
-
-        </div>
       </CardContent>
     </Card>
   );
