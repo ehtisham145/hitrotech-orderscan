@@ -81,6 +81,8 @@ const employeeSchema = z.object({
   target_activations: z.number().optional().nullable(),
   notes: z.string().optional().nullable(),
   salary: z.number().optional().nullable(),
+  compensation_type: z.enum(COMPENSATION_TYPES).optional(),
+  commission_per_activation: z.number().optional().nullable(),
   device_info: z.string().optional().nullable(),
   kpi_metrics: z.record(z.any()).optional().nullable(),
   promotion_history: z.array(z.any()).optional().nullable(),
