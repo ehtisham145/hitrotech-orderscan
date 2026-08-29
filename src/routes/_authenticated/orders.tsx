@@ -153,41 +153,47 @@ function AllOrdersPage() {
     queryKey: ["all-orders", search, batchId, status, network, branch, activationFrom, activationTo, storeFilter, page],
 
     queryFn: async () => {
-      let q = supabase
-        .from("extractions")
-        .select(
-          "id, batch_id, customer_name, phone_number, cnic, order_number, current_network, sim_type, number_type, package_name, plan_price, activation_date, activation_time, store_id, branch_name, employee_name, order_status, status, is_duplicate, needs_review, created_at",
-          { count: "exact" },
-        )
-        .order("activation_date_parsed", { ascending: false, nullsFirst: false })
-        .order("activation_time", { ascending: false, nullsFirst: false })
-        .order("created_at", { ascending: false })
-        .eq("is_duplicate", false)
-        .in("status", ["success", "completed"])
-        .range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1);
+      const run = async () => {
+        let q = supabase
+          .from("extractions")
+          .select(
+            altContactSupported ? `${BASE_SELECT}, alternative_contact` : BASE_SELECT,
+            { count: "exact" },
+          )
+          .order("activation_date_parsed", { ascending: false, nullsFirst: false })
+          .order("activation_time", { ascending: false, nullsFirst: false })
+          .order("created_at", { ascending: false })
+          .eq("is_duplicate", false)
+          .in("status", ["success", "completed"])
+          .range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1);
 
-      if (batchId !== "all") q = q.eq("batch_id", batchId);
-      if (status === "review") q = q.eq("needs_review", true);
-      else if (status === "success") q = q.eq("needs_review", false).in("status", ["success", "completed"]);
-      else if (status !== "all") q = q.eq("status", status);
-      if (network !== "all") q = q.eq("current_network", network);
-      if (branch !== "all") q = q.eq("branch_name", branch);
-      if (activationFrom) q = q.gte("activation_date_parsed", activationFrom);
-      if (activationTo) q = q.lte("activation_date_parsed", activationTo);
-      if (storeFilter) q = q.ilike("store_id", storeFilter);
+        if (batchId !== "all") q = q.eq("batch_id", batchId);
+        if (status === "review") q = q.eq("needs_review", true);
+        else if (status === "success") q = q.eq("needs_review", false).in("status", ["success", "completed"]);
+        else if (status !== "all") q = q.eq("status", status);
+        if (network !== "all") q = q.eq("current_network", network);
+        if (branch !== "all") q = q.eq("branch_name", branch);
+        if (activationFrom) q = q.gte("activation_date_parsed", activationFrom);
+        if (activationTo) q = q.lte("activation_date_parsed", activationTo);
+        if (storeFilter) q = q.ilike("store_id", storeFilter);
 
+        const term = search.trim();
+        if (term.length >= 2) {
+          const safe = term.replace(/[%,]/g, " ");
+          q = q.or(searchColumns().map((c) => `${c}.ilike.%${safe}%`).join(","));
+        }
+        return await q;
+      };
 
-      const term = search.trim();
-      if (term.length >= 2) {
-        const safe = term.replace(/[%,]/g, " ");
-        const cols = ["customer_name", "phone_number", "cnic", "order_number", "email", "reference", "branch_name", "employee_name"];
-        q = q.or(cols.map((c) => `${c}.ilike.%${safe}%`).join(","));
+      let { data, count, error } = await run();
+      if (error && altContactSupported && isMissingAltContact(error.message)) {
+        altContactSupported = false;
+        ({ data, count, error } = await run());
       }
-
-      const { data, count, error } = await q;
       if (error) throw error;
-      return { rows: data ?? [], count: count ?? 0 };
+      return { rows: (data ?? []) as Array<Record<string, unknown> & { id: string; batch_id: string }>, count: count ?? 0 };
     },
+
   });
 
   const rows = data?.rows ?? [];
