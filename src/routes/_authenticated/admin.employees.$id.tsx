@@ -30,6 +30,14 @@ import {
 } from "@/lib/employees.functions";
 import { requireWorkspaceRole } from "@/lib/route-guards";
 import { formatPkr } from "@/lib/plans";
+import {
+  COMPENSATION_TYPES,
+  COMPENSATION_LABELS,
+  COMPENSATION_HINTS,
+  monthlyEarnings,
+  normalizeCompensationType,
+  type CompensationType,
+} from "@/lib/employee-pay";
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, parseISO } from "date-fns";
 import {
   ResponsiveContainer,
@@ -549,10 +557,23 @@ function EmployeeEdit() {
                 tone={perf?.attainment && perf.attainment > 80 ? "success" : "warn"}
               />
               <StatCard 
-                label="Monthly Salary" 
-                value={formatPkr(form.salary || 0)}
+                label={form.compensation_type === "fixed" ? "Monthly Salary" : "Est. Monthly Earnings"}
+                value={formatPkr(
+                  monthlyEarnings({
+                    compensation_type: form.compensation_type,
+                    salary: form.salary,
+                    commission_per_activation: form.commission_per_activation,
+                    activations: perf?.totalActivations ?? 0,
+                  }).gross,
+                )}
                 icon={Banknote}
+                hint={
+                  form.compensation_type === "fixed"
+                    ? COMPENSATION_LABELS.fixed
+                    : `${formatPkr(form.salary || 0)} base + ${perf?.totalActivations ?? 0} × ${formatPkr(form.commission_per_activation || 0)}`
+                }
               />
+
 
             </div>
 
