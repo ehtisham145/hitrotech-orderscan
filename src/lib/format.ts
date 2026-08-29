@@ -27,6 +27,7 @@ export function avgConfidence(conf: Record<string, number> | null | undefined): 
 export const EXTRACT_FIELDS = [
   "customer_name",
   "phone_number",
+  "alternative_contact",
   "current_network",
   "sim_type",
   "number_type",
@@ -55,6 +56,7 @@ export type ExtractField = (typeof EXTRACT_FIELDS)[number];
 export const FIELD_LABELS: Record<ExtractField, string> = {
   customer_name: "Customer Name",
   phone_number: "Current / Onic Number",
+  alternative_contact: "Alternative Contact",
   current_network: "Current Network",
   sim_type: "Sim Type",
   number_type: "Number Type",

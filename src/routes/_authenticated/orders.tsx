@@ -46,6 +46,8 @@ const PAGE_SIZE = 100;
 const COLUMNS = [
   "customer_name",
   "phone_number",
+  "alternative_contact",
+  "email",
   "cnic",
   "order_number",
   "current_network",
@@ -60,6 +62,32 @@ const COLUMNS = [
   "employee_name",
 
 ] as const;
+
+const BASE_SELECT =
+  "id, batch_id, customer_name, phone_number, email, cnic, order_number, current_network, sim_type, number_type, package_name, plan_price, activation_date, activation_time, store_id, branch_name, employee_name, order_status, status, is_duplicate, needs_review, created_at";
+
+export type OrderRow = {
+  id: string;
+  batch_id: string;
+  status: string | null;
+  is_duplicate: boolean | null;
+  needs_review: boolean | null;
+  created_at: string | null;
+  alternative_contact?: string | null;
+} & Partial<Record<(typeof COLUMNS)[number] | "order_status", string | null>>;
+
+/** alternative_contact is added by a migration; older databases may not have it yet. */
+let altContactSupported = true;
+function isMissingAltContact(message: string | undefined) {
+  return !!message && /alternative_contact/i.test(message);
+}
+function searchColumns() {
+  const cols = ["customer_name", "phone_number", "cnic", "order_number", "email", "reference", "branch_name", "employee_name"];
+  if (altContactSupported) cols.push("alternative_contact");
+  return cols;
+}
+
+
 
 function AllOrdersPage() {
   const qc = useQueryClient();
@@ -136,41 +164,47 @@ function AllOrdersPage() {
     queryKey: ["all-orders", search, batchId, status, network, branch, activationFrom, activationTo, storeFilter, page],
 
     queryFn: async () => {
-      let q = supabase
-        .from("extractions")
-        .select(
-          "id, batch_id, customer_name, phone_number, cnic, order_number, current_network, sim_type, number_type, package_name, plan_price, activation_date, activation_time, store_id, branch_name, employee_name, order_status, status, is_duplicate, needs_review, created_at",
-          { count: "exact" },
-        )
-        .order("activation_date_parsed", { ascending: false, nullsFirst: false })
-        .order("activation_time", { ascending: false, nullsFirst: false })
-        .order("created_at", { ascending: false })
-        .eq("is_duplicate", false)
-        .in("status", ["success", "completed"])
-        .range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1);
+      const run = async () => {
+        let q = supabase
+          .from("extractions")
+          .select(
+            altContactSupported ? `${BASE_SELECT}, alternative_contact` : BASE_SELECT,
+            { count: "exact" },
+          )
+          .order("activation_date_parsed", { ascending: false, nullsFirst: false })
+          .order("activation_time", { ascending: false, nullsFirst: false })
+          .order("created_at", { ascending: false })
+          .eq("is_duplicate", false)
+          .in("status", ["success", "completed"])
+          .range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1);
 
-      if (batchId !== "all") q = q.eq("batch_id", batchId);
-      if (status === "review") q = q.eq("needs_review", true);
-      else if (status === "success") q = q.eq("needs_review", false).in("status", ["success", "completed"]);
-      else if (status !== "all") q = q.eq("status", status);
-      if (network !== "all") q = q.eq("current_network", network);
-      if (branch !== "all") q = q.eq("branch_name", branch);
-      if (activationFrom) q = q.gte("activation_date_parsed", activationFrom);
-      if (activationTo) q = q.lte("activation_date_parsed", activationTo);
-      if (storeFilter) q = q.ilike("store_id", storeFilter);
+        if (batchId !== "all") q = q.eq("batch_id", batchId);
+        if (status === "review") q = q.eq("needs_review", true);
+        else if (status === "success") q = q.eq("needs_review", false).in("status", ["success", "completed"]);
+        else if (status !== "all") q = q.eq("status", status);
+        if (network !== "all") q = q.eq("current_network", network);
+        if (branch !== "all") q = q.eq("branch_name", branch);
+        if (activationFrom) q = q.gte("activation_date_parsed", activationFrom);
+        if (activationTo) q = q.lte("activation_date_parsed", activationTo);
+        if (storeFilter) q = q.ilike("store_id", storeFilter);
 
+        const term = search.trim();
+        if (term.length >= 2) {
+          const safe = term.replace(/[%,]/g, " ");
+          q = q.or(searchColumns().map((c) => `${c}.ilike.%${safe}%`).join(","));
+        }
+        return await q;
+      };
 
-      const term = search.trim();
-      if (term.length >= 2) {
-        const safe = term.replace(/[%,]/g, " ");
-        const cols = ["customer_name", "phone_number", "cnic", "order_number", "email", "reference", "branch_name", "employee_name"];
-        q = q.or(cols.map((c) => `${c}.ilike.%${safe}%`).join(","));
+      let { data, count, error } = await run();
+      if (error && altContactSupported && isMissingAltContact(error.message)) {
+        altContactSupported = false;
+        ({ data, count, error } = await run());
       }
-
-      const { data, count, error } = await q;
       if (error) throw error;
-      return { rows: data ?? [], count: count ?? 0 };
+      return { rows: (data ?? []) as unknown as OrderRow[], count: count ?? 0 };
     },
+
   });
 
   const rows = data?.rows ?? [];
@@ -346,8 +380,7 @@ function AllOrdersPage() {
       const term = search.trim();
       if (term.length >= 2) {
         const safe = term.replace(/[%,]/g, " ");
-        const cols = ["customer_name", "phone_number", "cnic", "order_number", "email", "reference", "branch_name", "employee_name"];
-        q = q.or(cols.map((c) => `${c}.ilike.%${safe}%`).join(","));
+        q = q.or(searchColumns().map((c) => `${c}.ilike.%${safe}%`).join(","));
       }
 
       const { data, error } = await q;
@@ -369,6 +402,7 @@ function AllOrdersPage() {
       "Sim Type": r.sim_type ?? "",
       "Number Type": r.number_type ?? "",
       "Current/Onic Number": r.phone_number ?? "",
+      "Alternative Contact": r.alternative_contact ?? "",
       "Current Network": r.current_network ?? "",
       "Name": r.customer_name ?? "",
       "Cnic": r.cnic ?? "",
@@ -719,7 +753,7 @@ function AllOrdersPage() {
                         if (c === "current_network" && typeof r.number_type === "string" && r.number_type.trim().toLowerCase() === "new number") {
                           val = "ONIC";
                         }
-                        const editable = c === "customer_name" || c === "phone_number" || c === "cnic" || c === "order_number";
+                        const editable = c === "customer_name" || c === "phone_number" || c === "cnic" || c === "order_number" || c === "email" || (c === "alternative_contact" && altContactSupported);
                         return (
                           <td key={c} className="p-3 whitespace-nowrap">
                             {editable ? (

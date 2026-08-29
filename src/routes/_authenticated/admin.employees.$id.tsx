@@ -30,6 +30,14 @@ import {
 } from "@/lib/employees.functions";
 import { requireWorkspaceRole } from "@/lib/route-guards";
 import { formatPkr } from "@/lib/plans";
+import {
+  COMPENSATION_TYPES,
+  COMPENSATION_LABELS,
+  COMPENSATION_HINTS,
+  monthlyEarnings,
+  normalizeCompensationType,
+  type CompensationType,
+} from "@/lib/employee-pay";
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, parseISO } from "date-fns";
 import {
   ResponsiveContainer,
@@ -73,6 +81,8 @@ type FormState = {
   manager_id: string;
   target_activations: number;
   salary: number;
+  compensation_type: CompensationType;
+  commission_per_activation: number;
   device_info: string;
   notes: string;
   kpi_metrics: any;
@@ -92,6 +102,8 @@ const empty: FormState = {
   manager_id: "",
   target_activations: 0,
   salary: 0,
+  compensation_type: "fixed",
+  commission_per_activation: 0,
   device_info: "",
   notes: "",
   kpi_metrics: {},
@@ -209,6 +221,9 @@ function EmployeeEdit() {
         manager_id: data.manager_id ?? "",
         target_activations: data.target_activations ?? 0,
         salary: data.salary ?? 0,
+        compensation_type: normalizeCompensationType((data as any).compensation_type),
+        commission_per_activation: Number((data as any).commission_per_activation ?? 0),
+
         device_info: data.device_info ?? "",
         notes: data.notes ?? "",
         kpi_metrics: data.kpi_metrics ?? {},
@@ -378,9 +393,38 @@ function EmployeeEdit() {
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="salary">Monthly Salary (PKR)</Label>
-                  <Input id="salary" type="number" value={form.salary} onChange={(e) => setForm({ ...form, salary: parseInt(e.target.value) || 0 })} />
+                  <Label>Compensation Model</Label>
+                  <Select
+                    value={form.compensation_type}
+                    onValueChange={(v) => setForm({ ...form, compensation_type: v as CompensationType })}
+                  >
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {COMPENSATION_TYPES.map((t) => (
+                        <SelectItem key={t} value={t}>{COMPENSATION_LABELS[t]}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-[11px] text-slate-500">{COMPENSATION_HINTS[form.compensation_type]}</p>
                 </div>
+                {form.compensation_type !== "commission_only" && (
+                  <div className="space-y-2">
+                    <Label htmlFor="salary">Monthly Salary (PKR)</Label>
+                    <Input id="salary" type="number" value={form.salary} onChange={(e) => setForm({ ...form, salary: parseInt(e.target.value) || 0 })} />
+                  </div>
+                )}
+                {form.compensation_type !== "fixed" && (
+                  <div className="space-y-2">
+                    <Label htmlFor="rate">Commission per Activation (PKR)</Label>
+                    <Input
+                      id="rate"
+                      type="number"
+                      value={form.commission_per_activation}
+                      onChange={(e) => setForm({ ...form, commission_per_activation: parseInt(e.target.value) || 0 })}
+                    />
+                  </div>
+                )}
+
                 <div className="space-y-2 md:col-span-2">
                   <Label htmlFor="device_info">Assigned Device(s)</Label>
                   <Input id="device_info" value={form.device_info} onChange={(e) => setForm({ ...form, device_info: e.target.value })} placeholder="e.g. Samsung A55 - ID: 12345" />
@@ -513,10 +557,19 @@ function EmployeeEdit() {
                 tone={perf?.attainment && perf.attainment > 80 ? "success" : "warn"}
               />
               <StatCard 
-                label="Monthly Salary" 
-                value={formatPkr(form.salary || 0)}
+                label={form.compensation_type === "fixed" ? "Monthly Salary" : "Est. Monthly Earnings"}
+                value={formatPkr(
+                  monthlyEarnings({
+                    compensation_type: form.compensation_type,
+                    salary: form.salary,
+                    commission_per_activation: form.commission_per_activation,
+                    activations: perf?.totalActivations ?? 0,
+                  }).gross,
+                )}
                 icon={Banknote}
               />
+
+
 
             </div>
 
@@ -1028,7 +1081,7 @@ function KPIItem({ label, value, progress, color = "bg-brand-primary" }: { label
   );
 }
 
-function StatCard({ label, value, icon: Icon, tone = "default" }: { label: string, value: string | number, icon: any, tone?: "default" | "success" | "warn" }) {
+function StatCard({ label, value, icon: Icon, tone = "default", hint }: { label: string, value: string | number, icon: any, tone?: "default" | "success" | "warn", hint?: string }) {
   const toneClasses = {
     default: "bg-slate-50 text-slate-600 border-slate-100",
     success: "bg-emerald-50 text-emerald-600 border-emerald-100",
@@ -1041,9 +1094,10 @@ function StatCard({ label, value, icon: Icon, tone = "default" }: { label: strin
         <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${tone === 'default' ? 'bg-white shadow-sm' : 'bg-current/10'}`}>
           <Icon className="w-4 h-4" />
         </div>
-        <div>
+        <div className="min-w-0">
           <p className="text-[10px] font-bold uppercase tracking-wider opacity-60">{label}</p>
           <p className="text-lg font-black">{value}</p>
+          {hint ? <p className="text-[10px] opacity-60 truncate">{hint}</p> : null}
         </div>
       </CardContent>
     </Card>

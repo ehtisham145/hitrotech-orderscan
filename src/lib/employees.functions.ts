@@ -5,6 +5,7 @@ import { requireActiveWorkspaceId } from "./workspace-helpers";
 import { z } from "zod";
 import { startOfMonth, endOfMonth, format } from "date-fns";
 import { getPlan } from "./plans";
+import { COMPENSATION_TYPES, monthlyEarnings } from "./employee-pay";
 
 const WRITE_ROLES = ["owner", "admin", "manager"] as const;
 
@@ -81,6 +82,8 @@ const employeeSchema = z.object({
   target_activations: z.number().optional().nullable(),
   notes: z.string().optional().nullable(),
   salary: z.number().optional().nullable(),
+  compensation_type: z.enum(COMPENSATION_TYPES).optional(),
+  commission_per_activation: z.number().optional().nullable(),
   device_info: z.string().optional().nullable(),
   kpi_metrics: z.record(z.any()).optional().nullable(),
   promotion_history: z.array(z.any()).optional().nullable(),
@@ -203,6 +206,13 @@ export const getEmployeePerformance = createServerFn({ method: "GET" })
       efficiency: 0, // Placeholder
     };
 
+    const earnings = monthlyEarnings({
+      compensation_type: employee.compensation_type,
+      salary: employee.salary,
+      commission_per_activation: employee.commission_per_activation,
+      activations: activations.length,
+    });
+
     return {
       employee,
       month: monthStr,
@@ -210,10 +220,12 @@ export const getEmployeePerformance = createServerFn({ method: "GET" })
       target: employee.target_activations || 0,
       attainment: kpis.attainment,
       kpis,
+      earnings,
       daily: Array.from(dailyMap.entries()).map(([date, count]) => ({ date, count })),
       networks: Array.from(networkMap.entries()).map(([name, count]) => ({ name, count })),
     };
   });
+
 
 export const getEmployeeTeamPerformance = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])

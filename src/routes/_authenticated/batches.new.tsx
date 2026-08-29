@@ -353,7 +353,7 @@ function NewBatch() {
             </p>
           </div>
 
-          <div>
+          <div className="flex items-center gap-4 rounded-2xl border border-slate-200/70 bg-white/60 p-4 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
             <input
               ref={folderInputRef}
               type="file"
@@ -368,20 +368,27 @@ function NewBatch() {
                 e.currentTarget.value = "";
               }}
             />
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+              <Folder className="h-5 w-5" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold leading-tight text-foreground">Upload a whole folder</p>
+              <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">
+                Includes sub-folders. For individual files, use the drop box above.
+              </p>
+            </div>
             <Button
               type="button"
-              variant="ghost"
+              variant="outline"
               size="sm"
-              className="text-slate-500 hover:text-slate-900 font-semibold"
+              className="shrink-0 rounded-full font-semibold"
               onClick={() => folderInputRef.current?.click()}
               disabled={busy}
             >
-              <Folder className="w-4 h-4 mr-2" /> Choose folder
+              Choose folder
             </Button>
-            <p className="text-[11px] text-muted-foreground mt-1.5">
-              Picks an entire folder (including sub-folders). For individual files, use the drop box above.
-            </p>
           </div>
+
 
           {files.length > 0 && (
             <div className="border border-slate-200/60 rounded-2xl p-6 bg-slate-50/20">

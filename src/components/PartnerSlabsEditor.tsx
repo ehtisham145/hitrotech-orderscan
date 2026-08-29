@@ -25,6 +25,9 @@ import {
   type SlabInput,
 } from "@/lib/commission.functions";
 import { effectiveLabel, slabsEffectiveOn } from "@/lib/brand-slabs";
+import { findSlabConflict, type SlabLike } from "@/lib/slab-validation";
+import { useActivationTypes } from "@/components/ActivationTypesCard";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { PartnerRole } from "@/lib/partners.functions";
 
 type Row = SlabInput & { id: string; partner_id: string | null };
@@ -62,35 +65,15 @@ type Draft = {
   min_count: number;
   max_count: number | null;
   rate_pkr: number;
+  activation_type_id: string | null;
   effective_from: string | null;
   effective_to: string | null;
 };
 
-function validateSlab(d: Draft, existing: Row[], ignoreId?: string): string | null {
-  if (!Number.isFinite(d.min_count) || d.min_count < 1) return "Min must be 1 or greater.";
-  if (d.max_count !== null && (!Number.isFinite(d.max_count) || d.max_count < d.min_count))
-    return "Max must be blank or greater than or equal to Min.";
-  if (!Number.isFinite(d.rate_pkr) || d.rate_pkr < 0) return "Rate must be 0 or greater.";
-  if (d.effective_from && d.effective_to && d.effective_to < d.effective_from)
-    return "The 'to' date must be on or after the 'from' date.";
+const ALL_TYPES = "__all__";
 
-  for (const r of existing) {
-    if (r.id === ignoreId) continue;
-    const sameWindow = datesOverlap(
-      d.effective_from,
-      d.effective_to,
-      day(r.effective_from),
-      day(r.effective_to),
-    );
-    if (!sameWindow) continue;
-    if (rangesOverlap(d.min_count, d.max_count, r.min_count, r.max_count)) {
-      return `Range overlaps slab ${r.min_count}–${r.max_count ?? "∞"} (${effectiveLabel(r)}). Change the range or the dates.`;
-    }
-    if (r.rate_pkr === d.rate_pkr) {
-      return `Rate PKR ${d.rate_pkr.toLocaleString()} is already used by slab ${r.min_count}–${r.max_count ?? "∞"} in an overlapping period.`;
-    }
-  }
-  return null;
+function validateSlab(d: Draft, existing: Row[], ignoreId?: string): string | null {
+  return findSlabConflict({ ...d, id: ignoreId }, existing as SlabLike[]);
 }
 
 function windowKey(r: Row) {
@@ -134,10 +117,15 @@ export function PartnerSlabsEditor({
     onError: (e: Error) => toast.error(e.message),
   });
 
+  const { data: activationTypes } = useActivationTypes();
+  const typeName = (id?: string | null) =>
+    (activationTypes ?? []).find((t) => t.id === id)?.name ?? null;
+
   const [draft, setDraft] = useState<Draft>({
     min_count: 1,
     max_count: null,
     rate_pkr: 500,
+    activation_type_id: null,
     effective_from: null,
     effective_to: null,
   });
@@ -174,13 +162,14 @@ export function PartnerSlabsEditor({
         min_count: draft.min_count,
         max_count: draft.max_count,
         rate_pkr: draft.rate_pkr,
+        activation_type_id: draft.activation_type_id,
         effective_from: draft.effective_from,
         effective_to: draft.effective_to,
         active: true,
       },
       {
         onSuccess: () =>
-          setDraft({ min_count: 1, max_count: null, rate_pkr: 500, effective_from: null, effective_to: null }),
+          setDraft({ min_count: 1, max_count: null, rate_pkr: 500, activation_type_id: null, effective_from: null, effective_to: null }),
       },
     );
   };
@@ -253,7 +242,7 @@ export function PartnerSlabsEditor({
         {/* Add row */}
         <div className="rounded-md border bg-muted/20 p-3">
           <div className="mb-2 text-xs font-medium text-muted-foreground">Add slab for this partner</div>
-          <div className="grid gap-3 md:grid-cols-[1fr_1fr_1fr_1fr_1fr_auto] md:items-end">
+          <div className="grid gap-3 md:grid-cols-[1fr_1fr_1fr_1.2fr_1fr_1fr_auto] md:items-end">
             <div>
               <div className="mb-1 text-xs text-muted-foreground">Min</div>
               <Input
@@ -285,6 +274,21 @@ export function PartnerSlabsEditor({
                   setDraft({ ...draft, rate_pkr: e.target.value === "" ? NaN : parseInt(e.target.value, 10) })
                 }
               />
+            </div>
+            <div>
+              <div className="mb-1 text-xs text-muted-foreground">Activation type</div>
+              <Select
+                value={draft.activation_type_id ?? ALL_TYPES}
+                onValueChange={(v) => setDraft({ ...draft, activation_type_id: v === ALL_TYPES ? null : v })}
+              >
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={ALL_TYPES}>All types</SelectItem>
+                  {(activationTypes ?? []).map((t) => (
+                    <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div>
               <div className="mb-1 text-xs text-muted-foreground">Effective from</div>
@@ -364,6 +368,7 @@ export function PartnerSlabsEditor({
                           key={r.id}
                           row={r}
                           allRows={rows}
+                          typeName={typeName(r.activation_type_id)}
                           pending={save.isPending}
                           onSave={(next) => save.mutate({ ...next, id: r.id })}
                           onDelete={() => setPendingDeleteId(r.id)}
@@ -407,16 +412,19 @@ export function PartnerSlabsEditor({
 function SlabRow({
   row,
   allRows,
+  typeName,
   onSave,
   onDelete,
   pending,
 }: {
   row: Row;
   allRows: Row[];
+  typeName: string | null;
   onSave: (next: {
     min_count: number;
     max_count: number | null;
     rate_pkr: number;
+    activation_type_id: string | null;
     effective_from: string | null;
     effective_to: string | null;
     active: boolean;
@@ -430,6 +438,7 @@ function SlabRow({
     min_count: row.min_count,
     max_count: row.max_count,
     rate_pkr: row.rate_pkr,
+    activation_type_id: row.activation_type_id ?? null,
     effective_from: day(row.effective_from),
     effective_to: day(row.effective_to),
   });
@@ -439,6 +448,7 @@ function SlabRow({
       min_count: row.min_count,
       max_count: row.max_count,
       rate_pkr: row.rate_pkr,
+      activation_type_id: row.activation_type_id ?? null,
       effective_from: day(row.effective_from),
       effective_to: day(row.effective_to),
     });
@@ -450,6 +460,7 @@ function SlabRow({
       min_count: row.min_count,
       max_count: row.max_count,
       rate_pkr: row.rate_pkr,
+      activation_type_id: row.activation_type_id ?? null,
       effective_from: day(row.effective_from),
       effective_to: day(row.effective_to),
     });
@@ -486,6 +497,10 @@ function SlabRow({
         <div className="w-32 text-sm">
           <div className="text-xs text-muted-foreground">Rate (PKR)</div>
           <div className="font-medium">{row.rate_pkr.toLocaleString()}</div>
+        </div>
+        <div className="w-36 text-sm">
+          <div className="text-xs text-muted-foreground">Activation type</div>
+          <div>{typeName ?? "All types"}</div>
         </div>
         <div className="w-44 text-sm">
           <div className="text-xs text-muted-foreground">Effective</div>

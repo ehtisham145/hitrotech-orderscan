@@ -12,6 +12,7 @@ const SYSTEM_PROMPT = `You are an expert at extracting structured data from tele
   "data": {
     "customer_name": string|null,
     "phone_number": string|null,
+    "alternative_contact": string|null,
     "current_network": string|null,
     "sim_type": string|null,
     "number_type": string|null,
@@ -553,11 +554,31 @@ ${ocrText}
     }
   }
 
-  const { data: writtenRows, error: writeErr } = await supabase
+  let { data: writtenRows, error: writeErr } = await supabase
     .from("extractions")
     .update(update as any)
     .eq("id", extraction.id)
     .select("id");
+
+  // A column the deployment's schema does not have yet (e.g. alternative_contact
+  // before its migration ran) rejects the whole update. Drop it and retry once
+  // rather than failing a row over an optional field.
+  if (writeErr) {
+    const missing = /column "?([a-z_]+)"? .*does not exist|Could not find the '([a-z_]+)' column/i.exec(writeErr.message);
+    const col = missing?.[1] ?? missing?.[2];
+    if (col && col in update) {
+      console.warn(`[extract-core] Column "${col}" missing in schema — retrying without it.`);
+      delete update[col];
+      const retry = await supabase
+        .from("extractions")
+        .update(update as any)
+        .eq("id", extraction.id)
+        .select("id");
+      writtenRows = retry.data;
+      writeErr = retry.error;
+    }
+  }
+
 
   // Reporting success for a result that was never stored would leave the row
   // queued forever while the batch counted it as done.
