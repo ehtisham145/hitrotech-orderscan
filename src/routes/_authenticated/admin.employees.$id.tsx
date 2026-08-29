@@ -567,12 +567,8 @@ function EmployeeEdit() {
                   }).gross,
                 )}
                 icon={Banknote}
-                hint={
-                  form.compensation_type === "fixed"
-                    ? COMPENSATION_LABELS.fixed
-                    : `${formatPkr(form.salary || 0)} base + ${perf?.totalActivations ?? 0} × ${formatPkr(form.commission_per_activation || 0)}`
-                }
               />
+
 
 
             </div>
