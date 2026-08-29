@@ -1085,7 +1085,7 @@ function KPIItem({ label, value, progress, color = "bg-brand-primary" }: { label
   );
 }
 
-function StatCard({ label, value, icon: Icon, tone = "default" }: { label: string, value: string | number, icon: any, tone?: "default" | "success" | "warn" }) {
+function StatCard({ label, value, icon: Icon, tone = "default", hint }: { label: string, value: string | number, icon: any, tone?: "default" | "success" | "warn", hint?: string }) {
   const toneClasses = {
     default: "bg-slate-50 text-slate-600 border-slate-100",
     success: "bg-emerald-50 text-emerald-600 border-emerald-100",
@@ -1098,9 +1098,12 @@ function StatCard({ label, value, icon: Icon, tone = "default" }: { label: strin
         <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${tone === 'default' ? 'bg-white shadow-sm' : 'bg-current/10'}`}>
           <Icon className="w-4 h-4" />
         </div>
-        <div>
+        <div className="min-w-0">
           <p className="text-[10px] font-bold uppercase tracking-wider opacity-60">{label}</p>
           <p className="text-lg font-black">{value}</p>
+          {hint ? <p className="text-[10px] opacity-60 truncate">{hint}</p> : null}
+        </div>
+
         </div>
       </CardContent>
     </Card>
