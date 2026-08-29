@@ -15,11 +15,82 @@ export type SlabInput = {
   rate_pkr: number;
   active: boolean;
   partner_id?: string | null;
+  /** Activation type this rate applies to. Null = every activation type. */
+  activation_type_id?: string | null;
   /** Inclusive first day this rate applies (YYYY-MM-DD). Null = always. */
   effective_from?: string | null;
   /** Inclusive last day this rate applies (YYYY-MM-DD). Null = open-ended. */
   effective_to?: string | null;
 };
+
+export type ActivationType = {
+  id: string;
+  workspace_id: string;
+  name: string;
+  code: string | null;
+  active: boolean;
+  sort_order: number;
+};
+
+export const listActivationTypes = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const wsId = await requireActiveWorkspaceId(context.supabase, context.userId);
+    const { data, error } = await context.supabase
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .from("activation_types" as any)
+      .select("*")
+      .eq("workspace_id", wsId)
+      .order("sort_order", { ascending: true })
+      .order("name", { ascending: true });
+    // The table arrives with a migration; treat "not there yet" as "none configured".
+    if (error) {
+      if (/activation_types/i.test(error.message)) return [] as ActivationType[];
+      throw new Error(error.message);
+    }
+    return (data ?? []) as unknown as ActivationType[];
+  });
+
+export const upsertActivationType = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: { id?: string; name: string; code?: string | null; active?: boolean; sort_order?: number }) => input)
+  .handler(async ({ data, context }) => {
+    const wsId = await assertActiveWorkspaceRole(context.supabase, context.userId, [...WRITE_ROLES]);
+    const name = data.name.trim();
+    if (!name) throw new Error("Give the activation type a name.");
+    const payload = {
+      name,
+      code: data.code?.trim() || null,
+      active: data.active ?? true,
+      sort_order: data.sort_order ?? 0,
+      workspace_id: wsId,
+    };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const table = context.supabase.from("activation_types" as any);
+    const { error } = data.id
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ? await table.update(payload as any).eq("id", data.id).eq("workspace_id", wsId)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      : await table.insert(payload as any);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+export const deleteActivationType = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: { id: string }) => input)
+  .handler(async ({ data, context }) => {
+    const wsId = await assertActiveWorkspaceRole(context.supabase, context.userId, [...WRITE_ROLES]);
+    const { error } = await context.supabase
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .from("activation_types" as any)
+      .delete()
+      .eq("workspace_id", wsId)
+      .eq("id", data.id);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
 
 export const listSlabs = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
