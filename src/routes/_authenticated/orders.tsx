@@ -380,8 +380,7 @@ function AllOrdersPage() {
       const term = search.trim();
       if (term.length >= 2) {
         const safe = term.replace(/[%,]/g, " ");
-        const cols = ["customer_name", "phone_number", "cnic", "order_number", "email", "reference", "branch_name", "employee_name"];
-        q = q.or(cols.map((c) => `${c}.ilike.%${safe}%`).join(","));
+        q = q.or(searchColumns().map((c) => `${c}.ilike.%${safe}%`).join(","));
       }
 
       const { data, error } = await q;
