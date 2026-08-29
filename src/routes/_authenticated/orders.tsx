@@ -402,6 +402,7 @@ function AllOrdersPage() {
       "Sim Type": r.sim_type ?? "",
       "Number Type": r.number_type ?? "",
       "Current/Onic Number": r.phone_number ?? "",
+      "Alternative Contact": r.alternative_contact ?? "",
       "Current Network": r.current_network ?? "",
       "Name": r.customer_name ?? "",
       "Cnic": r.cnic ?? "",
