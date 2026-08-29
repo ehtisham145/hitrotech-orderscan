@@ -129,12 +129,28 @@ export const upsertSlab = createServerFn({ method: "POST" })
   .inputValidator((input: SlabInput) => input)
   .handler(async ({ data, context }) => {
     await assertActiveWorkspaceRole(context.supabase, context.userId, [...WRITE_ROLES]);
+
+    // The editor validates too, but this is the rule that actually holds.
+    {
+      let siblings = context.supabase
+        .from("commission_slabs")
+        .select("id, min_count, max_count, rate_pkr, partner_id, activation_type_id, effective_from, effective_to")
+        .eq("role", data.role);
+      siblings = data.partner_id
+        ? siblings.eq("partner_id", data.partner_id)
+        : siblings.is("partner_id", null);
+      const { data: rows } = await siblings;
+      const conflict = findSlabConflict(data, (rows ?? []) as unknown as SlabLike[]);
+      if (conflict) throw new Error(conflict);
+    }
+
     if (data.id) {
       const { id, ...rest } = data;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { error } = await context.supabase.from("commission_slabs").update(rest as any).eq("id", id);
       if (error) throw new Error(error.message);
     } else {
+
       // Resolve workspace_id (NOT NULL + required by RLS policy)
       let workspace_id: string | null = null;
       if (data.partner_id) {
