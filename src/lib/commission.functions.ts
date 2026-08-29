@@ -3,6 +3,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/ext-auth-middleware";
 import { assertActiveWorkspaceRole } from "./authz.server";
 import { requireActiveWorkspaceId } from "./workspace-helpers";
+import { findSlabConflict, type SlabLike } from "./slab-validation";
 import type { PartnerRole } from "./partners.functions";
 
 const WRITE_ROLES = ["owner", "admin", "manager"] as const;
