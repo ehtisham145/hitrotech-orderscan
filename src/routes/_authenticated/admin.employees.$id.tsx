@@ -213,6 +213,9 @@ function EmployeeEdit() {
         manager_id: data.manager_id ?? "",
         target_activations: data.target_activations ?? 0,
         salary: data.salary ?? 0,
+        compensation_type: normalizeCompensationType((data as any).compensation_type),
+        commission_per_activation: Number((data as any).commission_per_activation ?? 0),
+
         device_info: data.device_info ?? "",
         notes: data.notes ?? "",
         kpi_metrics: data.kpi_metrics ?? {},
