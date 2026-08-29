@@ -753,7 +753,7 @@ function AllOrdersPage() {
                         if (c === "current_network" && typeof r.number_type === "string" && r.number_type.trim().toLowerCase() === "new number") {
                           val = "ONIC";
                         }
-                        const editable = c === "customer_name" || c === "phone_number" || c === "cnic" || c === "order_number";
+                        const editable = c === "customer_name" || c === "phone_number" || c === "cnic" || c === "order_number" || c === "email" || (c === "alternative_contact" && altContactSupported);
                         return (
                           <td key={c} className="p-3 whitespace-nowrap">
                             {editable ? (
