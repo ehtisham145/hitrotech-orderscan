@@ -412,12 +412,14 @@ export function PartnerSlabsEditor({
 function SlabRow({
   row,
   allRows,
+  typeName,
   onSave,
   onDelete,
   pending,
 }: {
   row: Row;
   allRows: Row[];
+  typeName: string | null;
   onSave: (next: {
     min_count: number;
     max_count: number | null;
@@ -435,6 +437,7 @@ function SlabRow({
     min_count: row.min_count,
     max_count: row.max_count,
     rate_pkr: row.rate_pkr,
+    activation_type_id: row.activation_type_id ?? null,
     effective_from: day(row.effective_from),
     effective_to: day(row.effective_to),
   });
@@ -444,6 +447,7 @@ function SlabRow({
       min_count: row.min_count,
       max_count: row.max_count,
       rate_pkr: row.rate_pkr,
+      activation_type_id: row.activation_type_id ?? null,
       effective_from: day(row.effective_from),
       effective_to: day(row.effective_to),
     });
@@ -455,6 +459,7 @@ function SlabRow({
       min_count: row.min_count,
       max_count: row.max_count,
       rate_pkr: row.rate_pkr,
+      activation_type_id: row.activation_type_id ?? null,
       effective_from: day(row.effective_from),
       effective_to: day(row.effective_to),
     });
@@ -491,6 +496,10 @@ function SlabRow({
         <div className="w-32 text-sm">
           <div className="text-xs text-muted-foreground">Rate (PKR)</div>
           <div className="font-medium">{row.rate_pkr.toLocaleString()}</div>
+        </div>
+        <div className="w-36 text-sm">
+          <div className="text-xs text-muted-foreground">Activation type</div>
+          <div>{typeName ?? "All types"}</div>
         </div>
         <div className="w-44 text-sm">
           <div className="text-xs text-muted-foreground">Effective</div>
