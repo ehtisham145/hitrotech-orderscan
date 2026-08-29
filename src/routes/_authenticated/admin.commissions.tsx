@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { listPartners, type PartnerRole } from "@/lib/partners.functions";
 import { PartnerSlabsEditor } from "@/components/PartnerSlabsEditor";
+import { ActivationTypesCard } from "@/components/ActivationTypesCard";
 import { requireWorkspaceRole } from "@/lib/route-guards";
 import { PlanGate } from "@/components/PlanGate";
 
@@ -63,6 +64,9 @@ function CommissionsPage() {
           </Select>
         </CardContent>
       </Card>
+
+      <ActivationTypesCard />
+
 
       {selectedPartner ? (
         <PartnerSlabsEditor partnerId={selectedPartner.id} role={selectedPartner.role as PartnerRole} />
