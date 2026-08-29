@@ -310,8 +310,10 @@ function ReportsPage() {
         <div className="flex items-center justify-between">
           <div>
         
-            <h1 className="text-2xl font-semibold tracking-tight">Reports</h1>
-            <p className="text-sm text-muted-foreground">Build a custom report with filters and export to Excel.</p>
+            <h1 className="text-[28px] font-semibold leading-none tracking-[-0.02em] text-foreground">Reports</h1>
+            <p className="mt-1.5 text-[13px] leading-relaxed tracking-[-0.005em] text-muted-foreground">
+              Build a custom report with filters and export to Excel.
+            </p>
           </div>
           <div className="flex gap-2 print:hidden">
             <Button variant="outline" onClick={printReport} disabled={(rows?.length ?? 0) === 0}>
@@ -338,7 +340,7 @@ function ReportsPage() {
 
       <Card className="print:hidden">
         <CardHeader className="pb-3">
-          <CardTitle className="flex items-center gap-2 text-base"><BookmarkCheck className="w-4 h-4" /> Saved views</CardTitle>
+          <CardTitle className="flex items-center gap-2 text-[15px] font-semibold tracking-[-0.01em]"><BookmarkCheck className="w-4 h-4" /> Saved views</CardTitle>
         </CardHeader>
         <CardContent>
           {(views?.length ?? 0) === 0 ? (
@@ -371,7 +373,7 @@ function ReportsPage() {
 
       <Card className="print:hidden rounded-2xl">
         <CardHeader className="pb-3">
-          <CardTitle className="flex items-center gap-2 text-base"><Filter className="w-4 h-4" /> Filters</CardTitle>
+          <CardTitle className="flex items-center gap-2 text-[15px] font-semibold tracking-[-0.01em]"><Filter className="w-4 h-4" /> Filters</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
@@ -459,7 +461,7 @@ function ReportsPage() {
 
       <Card className="rounded-2xl">
         <CardHeader className="pb-3">
-          <CardTitle className="flex items-center gap-2 text-base">
+          <CardTitle className="flex items-center gap-2 text-[15px] font-semibold tracking-[-0.01em]">
             <FileSpreadsheet className="w-4 h-4" /> Preview {isFetching && <span className="text-xs text-muted-foreground">Loading…</span>}
           </CardTitle>
         </CardHeader>
@@ -556,8 +558,8 @@ function ReportsPage() {
 function StatCard({ label, value }: { label: string; value: number }) {
   return (
     <Card className="rounded-2xl"><CardContent className="p-4">
-      <div className="text-xs text-muted-foreground">{label}</div>
-      <div className="text-2xl font-semibold">{value.toLocaleString()}</div>
+      <div className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{label}</div>
+      <div className="mt-1 text-2xl font-semibold tabular-nums tracking-[-0.02em]">{value.toLocaleString()}</div>
     </CardContent></Card>
   );
 }
@@ -579,7 +581,7 @@ function BreakdownCard({ title, rows }: { title: string; rows: [string, number][
     isNetwork ? NETWORK_BRAND_COLORS[k.trim().toLowerCase()] : undefined;
   return (
     <Card className="rounded-2xl">
-      <CardHeader className="pb-2"><CardTitle className="text-sm">{title}</CardTitle></CardHeader>
+      <CardHeader className="pb-2"><CardTitle className="text-[13px] font-semibold tracking-[-0.01em]">{title}</CardTitle></CardHeader>
       <CardContent className="space-y-1.5">
         {rows.length === 0 && <div className="text-xs text-muted-foreground">No data.</div>}
         {rows.slice(0, 8).map(([k, v]) => {
@@ -690,7 +692,7 @@ function ScheduledReportsSection({ views }: { views: Array<{ id: string; name: s
     <PlanGate feature="scheduled_reports">
     <Card className="print:hidden rounded-2xl">
       <CardHeader className="pb-3">
-        <CardTitle className="flex items-center gap-2 text-base">
+        <CardTitle className="flex items-center gap-2 text-[15px] font-semibold tracking-[-0.01em]">
           <FileSpreadsheet className="w-4 h-4" /> Scheduled exports
         </CardTitle>
       </CardHeader>
