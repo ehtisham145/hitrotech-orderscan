@@ -66,6 +66,16 @@ const COLUMNS = [
 const BASE_SELECT =
   "id, batch_id, customer_name, phone_number, email, cnic, order_number, current_network, sim_type, number_type, package_name, plan_price, activation_date, activation_time, store_id, branch_name, employee_name, order_status, status, is_duplicate, needs_review, created_at";
 
+export type OrderRow = {
+  id: string;
+  batch_id: string;
+  status: string | null;
+  is_duplicate: boolean | null;
+  needs_review: boolean | null;
+  created_at: string | null;
+  alternative_contact?: string | null;
+} & Partial<Record<(typeof COLUMNS)[number] | "order_status", string | null>>;
+
 /** alternative_contact is added by a migration; older databases may not have it yet. */
 let altContactSupported = true;
 function isMissingAltContact(message: string | undefined) {
@@ -76,6 +86,7 @@ function searchColumns() {
   if (altContactSupported) cols.push("alternative_contact");
   return cols;
 }
+
 
 
 function AllOrdersPage() {
@@ -191,7 +202,7 @@ function AllOrdersPage() {
         ({ data, count, error } = await run());
       }
       if (error) throw error;
-      return { rows: (data ?? []) as Array<Record<string, unknown> & { id: string; batch_id: string }>, count: count ?? 0 };
+      return { rows: (data ?? []) as unknown as OrderRow[], count: count ?? 0 };
     },
 
   });
