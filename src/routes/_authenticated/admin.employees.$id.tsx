@@ -385,9 +385,38 @@ function EmployeeEdit() {
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="salary">Monthly Salary (PKR)</Label>
-                  <Input id="salary" type="number" value={form.salary} onChange={(e) => setForm({ ...form, salary: parseInt(e.target.value) || 0 })} />
+                  <Label>Compensation Model</Label>
+                  <Select
+                    value={form.compensation_type}
+                    onValueChange={(v) => setForm({ ...form, compensation_type: v as CompensationType })}
+                  >
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {COMPENSATION_TYPES.map((t) => (
+                        <SelectItem key={t} value={t}>{COMPENSATION_LABELS[t]}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-[11px] text-slate-500">{COMPENSATION_HINTS[form.compensation_type]}</p>
                 </div>
+                {form.compensation_type !== "commission_only" && (
+                  <div className="space-y-2">
+                    <Label htmlFor="salary">Monthly Salary (PKR)</Label>
+                    <Input id="salary" type="number" value={form.salary} onChange={(e) => setForm({ ...form, salary: parseInt(e.target.value) || 0 })} />
+                  </div>
+                )}
+                {form.compensation_type !== "fixed" && (
+                  <div className="space-y-2">
+                    <Label htmlFor="rate">Commission per Activation (PKR)</Label>
+                    <Input
+                      id="rate"
+                      type="number"
+                      value={form.commission_per_activation}
+                      onChange={(e) => setForm({ ...form, commission_per_activation: parseInt(e.target.value) || 0 })}
+                    />
+                  </div>
+                )}
+
                 <div className="space-y-2 md:col-span-2">
                   <Label htmlFor="device_info">Assigned Device(s)</Label>
                   <Input id="device_info" value={form.device_info} onChange={(e) => setForm({ ...form, device_info: e.target.value })} placeholder="e.g. Samsung A55 - ID: 12345" />
