@@ -46,6 +46,8 @@ const PAGE_SIZE = 100;
 const COLUMNS = [
   "customer_name",
   "phone_number",
+  "alternative_contact",
+  "email",
   "cnic",
   "order_number",
   "current_network",
@@ -60,6 +62,21 @@ const COLUMNS = [
   "employee_name",
 
 ] as const;
+
+const BASE_SELECT =
+  "id, batch_id, customer_name, phone_number, email, cnic, order_number, current_network, sim_type, number_type, package_name, plan_price, activation_date, activation_time, store_id, branch_name, employee_name, order_status, status, is_duplicate, needs_review, created_at";
+
+/** alternative_contact is added by a migration; older databases may not have it yet. */
+let altContactSupported = true;
+function isMissingAltContact(message: string | undefined) {
+  return !!message && /alternative_contact/i.test(message);
+}
+function searchColumns() {
+  const cols = ["customer_name", "phone_number", "cnic", "order_number", "email", "reference", "branch_name", "employee_name"];
+  if (altContactSupported) cols.push("alternative_contact");
+  return cols;
+}
+
 
 function AllOrdersPage() {
   const qc = useQueryClient();
