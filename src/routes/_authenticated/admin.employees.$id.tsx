@@ -73,6 +73,8 @@ type FormState = {
   manager_id: string;
   target_activations: number;
   salary: number;
+  compensation_type: CompensationType;
+  commission_per_activation: number;
   device_info: string;
   notes: string;
   kpi_metrics: any;
@@ -92,6 +94,8 @@ const empty: FormState = {
   manager_id: "",
   target_activations: 0,
   salary: 0,
+  compensation_type: "fixed",
+  commission_per_activation: 0,
   device_info: "",
   notes: "",
   kpi_metrics: {},
