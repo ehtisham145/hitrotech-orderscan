@@ -424,6 +424,7 @@ function SlabRow({
     min_count: number;
     max_count: number | null;
     rate_pkr: number;
+    activation_type_id: string | null;
     effective_from: string | null;
     effective_to: string | null;
     active: boolean;
