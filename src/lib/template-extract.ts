@@ -35,6 +35,14 @@ const ORDER_PLACED_PATTERN = /^order\s*placed\s*on$/i;
 
 const DEFAULT_MIN_CONFIDENCE = 90;
 
+// Guards against a missed OCR line between two labels (e.g. a blurred value):
+// without this, "value" below would silently become the *next* label's text
+// instead of the missing value, corrupting that field rather than leaving it
+// blank.
+function isKnownLabel(line: string): boolean {
+  return ORDER_PLACED_PATTERN.test(line) || LABEL_MAP.some((m) => m.pattern.test(line));
+}
+
 /**
  * Returns parsed fields if (a) the OCR read was confident enough and (b) all
  * three core fields were found by exact label match — otherwise null, which
@@ -59,7 +67,7 @@ export function tryTemplateExtraction(
   for (let i = 0; i < lines.length - 1; i++) {
     const label = lines[i];
     const value = lines[i + 1];
-    if (!value) continue;
+    if (!value || isKnownLabel(value)) continue;
 
     if (ORDER_PLACED_PATTERN.test(label)) {
       const [datePart, timePart] = value.split("|").map((s) => s.trim());
