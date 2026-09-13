@@ -60,6 +60,18 @@ function isStaleProcessingRow(row: { status: string; updated_at?: string | null 
   return row.status === "processing" && (!Number.isFinite(updatedAtMs) || Date.now() - updatedAtMs > STALE_PROCESSING_MS);
 }
 
+/** A failed row worth re-driving automatically rather than leaving for a human. */
+function isRedrivableFailure(
+  row: { status: string; id: string; error_message?: string | null },
+  autoRetryCounts: Map<string, number>,
+) {
+  return (
+    row.status === "failed" &&
+    (isRecoverableQueueFailure(row.error_message) ||
+      (isForeignWorkerFailure(row.error_message) && (autoRetryCounts.get(row.id) ?? 0) < MAX_AUTO_RETRIES_PER_ROW))
+  );
+}
+
 export const Route = createFileRoute("/_authenticated/batches/$id")({
   validateSearch: zodValidator(filterSchema),
   head: () => ({
@@ -118,6 +130,12 @@ function BatchDetail() {
       return rows?.some((r) => r.status === "pending" || r.status === "processing") ? 1000 : false;
     },
   });
+
+  // Mirrors of the latest query data for the direct-processing effect below to
+  // read from a live worker loop without needing `rows`/`batch` themselves in
+  // its dependency array — see that effect's comment for why that matters.
+  const rowsRef = useRef(rows);
+  const batchRef = useRef(batch);
 
   useEffect(() => {
     if (!viewingPath) {
@@ -223,77 +241,105 @@ function BatchDetail() {
     return () => clearInterval(timer);
   }, [batchIsWorking, hasQueuedRows, id, keepBatchRowsFreshFn]);
 
+  useEffect(() => {
+    rowsRef.current = rows;
+  }, [rows]);
+  useEffect(() => {
+    batchRef.current = batch;
+  }, [batch]);
+
   // Safety net: process queued rows directly from the open batch page without
   // showing per-image popups. The server still claims each row atomically, so
   // this does not duplicate work if the durable background worker also starts.
-  useEffect(() => {
-    if (!batch || !rows || browserProcessing.current) return;
-    const isRedrivable = (r: { status: string; id: string; error_message?: string | null }) =>
-      r.status === "failed" &&
-      (isRecoverableQueueFailure(r.error_message) ||
-        (isForeignWorkerFailure(r.error_message) &&
-          (autoRetryCounts.current.get(r.id) ?? 0) < MAX_AUTO_RETRIES_PER_ROW));
-    const hasRecoverableFailures = rows.some(isRedrivable);
-    if (batch.status === "paused" || batch.status === "cancelled") return;
-    if (batch.status === "completed" && !hasRecoverableFailures) return;
+  //
+  // Depends on a boolean, not on `rows`/`batch` themselves — same reasoning as
+  // the heartbeat effect above, but the stakes here are higher: this effect's
+  // cleanup tears down an in-flight worker pool, and `rows` gets a new object
+  // reference on every ~1s poll and every realtime update. With `rows` in the
+  // dependency list, a bulk batch of N images reliably only ever got as far as
+  // its first MAX_PARALLEL_WORKERS rows — the wave was marking every row it
+  // *intended* to process as claimed up front, then getting torn down by the
+  // very first row to finish (which invalidates the query, changing `rows`)
+  // before the remaining cursor positions were ever dispatched. Those
+  // abandoned rows stayed marked "claimed" for the rest of the page's life,
+  // sitting at "pending" until a manual reload cleared `browserProcessedIds`.
+  // The fix: react only to whether claimable work exists at all, and have
+  // each worker pull its next row fresh off `rowsRef`/`batchRef` instead of a
+  // snapshot frozen at wave-start — so an unrelated re-render can no longer
+  // starve rows that are still waiting for a worker.
+  const hasClaimableWork = Boolean(
+    rows?.some(
+      (r) =>
+        (r.status === "pending" || isRedrivableFailure(r, autoRetryCounts.current)) &&
+        !isStaleProcessingRow(r) &&
+        !browserProcessedIds.current.has(r.id) &&
+        (directRetryAfter.current.get(r.id) ?? 0) <= Date.now(),
+    ),
+  );
 
-    const now = Date.now();
-    const pending = rows
-      .filter(
-        (r) =>
-          (r.status === "pending" || isRedrivable(r)) &&
-          !isStaleProcessingRow(r) &&
-          !browserProcessedIds.current.has(r.id) &&
-          (directRetryAfter.current.get(r.id) ?? 0) <= now,
-      )
-      .map((r) => r.id);
-    pending.forEach((rowId) => {
-      const row = rows.find((r) => r.id === rowId);
-      if (row?.status === "failed") {
-        autoRetryCounts.current.set(rowId, (autoRetryCounts.current.get(rowId) ?? 0) + 1);
-      }
-    });
-    if (pending.length === 0) return;
+  useEffect(() => {
+    if (!hasClaimableWork || browserProcessing.current) return;
 
     let cancelled = false;
     browserProcessing.current = true;
-    pending.forEach((rowId) => browserProcessedIds.current.add(rowId));
 
-    const processRows = async () => {
-      let cursor = 0;
-      const worker = async () => {
-        while (!cancelled) {
-          const rowId = pending[cursor++];
-          if (!rowId) return;
-          try {
-            const result = await processExtractionNowFn({ data: { extraction_id: rowId } });
-            const errMsg = result.error ?? "";
-            if (!result.ok && !/paused|cancelled|already_success/i.test(errMsg)) {
-              console.warn("[batch direct processing] extraction did not complete", errMsg);
-              if (/AI not configured|AI rate limit|retrying|capacity|already_processing|already_claimed|proxy_/i.test(errMsg)) {
-                browserProcessedIds.current.delete(rowId);
-                directRetryAfter.current.set(rowId, Date.now() + 5_000);
-              }
-            }
-          } catch (err) {
-            console.error("[batch direct processing] failed", err);
-          } finally {
-            qc.invalidateQueries({ queryKey: ["extractions", id] });
-            qc.invalidateQueries({ queryKey: ["batch", id] });
-          }
-        }
-      };
+    const claimNext = (): string | null => {
+      const currentBatch = batchRef.current;
+      const currentRows = rowsRef.current;
+      if (!currentBatch || !currentRows) return null;
+      if (currentBatch.status === "paused" || currentBatch.status === "cancelled") return null;
+      const hasRecoverableFailures = currentRows.some((r) => isRedrivableFailure(r, autoRetryCounts.current));
+      if (currentBatch.status === "completed" && !hasRecoverableFailures) return null;
 
-      // Kept deliberately small: the OCR service processes one image at a time
-      // (OCR_MAX_CONCURRENCY on a modest host), so a large worker pool here just
-      // means most requests queue on the OCR side and burn their timeout budget
-      // waiting instead of extracting. A smaller pool spreads the same work over
-      // fewer simultaneous requests, which is lighter on both this server and OCR.
-      const MAX_PARALLEL_WORKERS = 4;
-      await Promise.all(Array.from({ length: Math.min(MAX_PARALLEL_WORKERS, pending.length) }, () => worker()));
+      const now = Date.now();
+      const row = currentRows.find(
+        (r) =>
+          (r.status === "pending" || isRedrivableFailure(r, autoRetryCounts.current)) &&
+          !isStaleProcessingRow(r) &&
+          !browserProcessedIds.current.has(r.id) &&
+          (directRetryAfter.current.get(r.id) ?? 0) <= now,
+      );
+      if (!row) return null;
+      browserProcessedIds.current.add(row.id);
+      if (row.status === "failed") {
+        autoRetryCounts.current.set(row.id, (autoRetryCounts.current.get(row.id) ?? 0) + 1);
+      }
+      return row.id;
     };
 
-    void processRows().finally(() => {
+    const worker = async () => {
+      while (!cancelled) {
+        const rowId = claimNext();
+        if (!rowId) return;
+        try {
+          const result = await processExtractionNowFn({ data: { extraction_id: rowId } });
+          const errMsg = result.error ?? "";
+          if (!result.ok && !/paused|cancelled|already_success/i.test(errMsg)) {
+            console.warn("[batch direct processing] extraction did not complete", errMsg);
+            if (/AI not configured|AI rate limit|retrying|capacity|already_processing|already_claimed|proxy_/i.test(errMsg)) {
+              browserProcessedIds.current.delete(rowId);
+              directRetryAfter.current.set(rowId, Date.now() + 5_000);
+            }
+          }
+        } catch (err) {
+          console.error("[batch direct processing] failed", err);
+        } finally {
+          qc.invalidateQueries({ queryKey: ["extractions", id] });
+          qc.invalidateQueries({ queryKey: ["batch", id] });
+        }
+      }
+    };
+
+    // Kept deliberately small: the OCR service processes one image at a time
+    // (OCR_MAX_CONCURRENCY on a modest host), so a large worker pool here just
+    // means most requests queue on the OCR side and burn their timeout budget
+    // waiting instead of extracting. A smaller pool spreads the same work over
+    // fewer simultaneous requests, which is lighter on both this server and OCR.
+    // Extra workers beyond however much work actually exists just no-op via
+    // claimNext() returning null immediately, so it's safe to always spin up
+    // the full count rather than sizing it to a (now nonexistent) static list.
+    const MAX_PARALLEL_WORKERS = 4;
+    void Promise.all(Array.from({ length: MAX_PARALLEL_WORKERS }, () => worker())).finally(() => {
       browserProcessing.current = false;
       qc.invalidateQueries({ queryKey: ["extractions", id] });
       qc.invalidateQueries({ queryKey: ["batch", id] });
@@ -302,7 +348,7 @@ function BatchDetail() {
     return () => {
       cancelled = true;
     };
-  }, [batch, id, processExtractionNowFn, qc, rows]);
+  }, [hasClaimableWork, id, processExtractionNowFn, qc]);
 
   const activeCount = useMemo(
     () => (rows ?? []).filter((r) => r.status === "pending" || r.status === "processing").length,
