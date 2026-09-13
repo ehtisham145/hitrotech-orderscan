@@ -42,8 +42,9 @@ COPY app ./app
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080", "--reload"]
 
 # ---------------------------------------------------------------------------
-# prod: no bind mount, no dev tooling, models baked in at build time so the
-# very first request after container start doesn't pay a download cost.
+# prod: no bind mount, no dev tooling. Models are NOT baked in at build time
+# (see below) — they download on first container start instead, via
+# app.main's OCR_EAGER_LOAD path.
 # ---------------------------------------------------------------------------
 FROM base AS prod
 
@@ -52,10 +53,15 @@ RUN pip install --upgrade pip && pip install -r requirements/prod.txt
 
 COPY app ./app
 
-# Warm the model cache into the image (download only; the process-level engine
-# is still built lazily/at-startup by app.main, see OCR_EAGER_LOAD).
-RUN python -c "from paddleocr import PaddleOCR; PaddleOCR(use_angle_cls=True, lang='en', show_log=False)"
-
+# Deliberately NOT running the model-prebake step here (previously:
+# `python -c "from paddleocr import PaddleOCR; PaddleOCR(...)"` at build
+# time). On this project's VPS that step reproducibly corrupted mid-build
+# (`zlib.error: Error -2 while decompressing data: inconsistent stream
+# state` inside pip's/paddle's own download-and-unpack, not this repo's
+# code) even after `--no-cache` and a full `docker builder prune -af`. The
+# cost is a slower first request after a fresh container start (model
+# download + load) instead of a slower image build; correctness is
+# unaffected either way.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=45s --retries=3 \
     CMD curl -fsS http://localhost:8080/health || exit 1
 
