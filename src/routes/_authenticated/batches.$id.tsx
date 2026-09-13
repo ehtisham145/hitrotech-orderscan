@@ -350,7 +350,7 @@ function BatchDetail() {
           const errMsg = result.error ?? "";
           if (!result.ok && !/paused|cancelled|already_success/i.test(errMsg)) {
             console.warn("[batch direct processing] extraction did not complete", errMsg);
-            if (/AI not configured|AI rate limit|retrying|capacity|already_processing|already_claimed|proxy_/i.test(errMsg)) {
+            if (/AI not configured|AI rate limit|retrying|capacity|already_processing|already_claimed|claim_failed|proxy_/i.test(errMsg)) {
               browserProcessedIds.current.delete(rowId);
               directRetryAfter.current.set(rowId, Date.now() + 5_000);
             }

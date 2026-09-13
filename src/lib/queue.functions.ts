@@ -156,7 +156,7 @@ export const processExtractionNow = createServerFn({ method: "POST" })
     // the atomic claim in extract-core.server and is actively working the row
     // right now — resetting it to "pending" here would rip it out from under
     // that in-flight worker instead of just being this caller's own no-op.
-    if (!result.ok && /AI not configured|AI rate limit|retrying|capacity|proxy_/i.test(String(result.error))) {
+    if (!result.ok && /AI not configured|AI rate limit|retrying|capacity|claim_failed|proxy_/i.test(String(result.error))) {
       await context.supabase
         .from("extractions")
         .update({ status: "pending", error_message: `${result.error} — retrying automatically`, updated_at: nowIso() })
