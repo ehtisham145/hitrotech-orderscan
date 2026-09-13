@@ -350,6 +350,33 @@ async function runExtractionUnguarded(supabase: SB, extractionId: string): Promi
 
   if (fetchErr || !extraction) return { ok: false, error: "not_found" };
 
+  // Atomic claim: only a row still in "pending" or "failed" (a retry) can be
+  // taken. Without the status filter here, two concurrent callers for the same
+  // row (two open tabs, the auto-redrive path racing the direct-processing
+  // effect, a durable worker racing this page) would BOTH pass, both run a
+  // full OCR+AI cycle, and both write a result — confirmed happening in
+  // production logs as the same extraction_id logging "Template match" twice
+  // back to back. The caller-side code already expects an "already_processing"
+  // result and treats it as a harmless no-op (see queue.functions.ts and
+  // batches.$id.tsx) — this was the missing half of that contract.
+  const { data: claimed, error: claimErr } = await supabase
+    .from("extractions")
+    .update({ status: "processing", error_message: "Reading screenshot...", updated_at: nowIso() })
+    .eq("id", extractionId)
+    .in("status", ["pending", "failed"])
+    .select("id");
+
+  if (claimErr) {
+    console.error("[extract-core] Could not claim extraction:", claimErr.message);
+    return { ok: false, error: "claim_failed" };
+  }
+  if (!claimed?.length) {
+    // Someone else already claimed this row (or it's already done/cancelled).
+    // Not this row's failure — leave its status exactly as the actual claimant
+    // left it rather than touching it.
+    return { ok: false, error: "already_processing" };
+  }
+
   // OCR is the primary reader. When it cannot answer, the screenshot goes to the
   // model directly rather than the row failing: the OCR service runs inference
   // that costs gigabytes per page, so on a small host it is the part most likely
@@ -359,21 +386,6 @@ async function runExtractionUnguarded(supabase: SB, extractionId: string): Promi
   let imageBytes: Buffer;
 
   try {
-    const { data: claimed, error: claimErr } = await supabase
-      .from("extractions")
-      .update({ status: "processing", error_message: "Reading screenshot...", updated_at: nowIso() })
-      .eq("id", extractionId)
-      .select("id");
-
-    // Nothing below is worth doing if this caller cannot actually write to the
-    // row: the work would run, produce a result, and then be dropped on the
-    // floor by the same silent no-op, over and over.
-    if (claimErr || !claimed?.length) {
-      throw new Error(
-        `Could not mark extraction as processing: ${claimErr?.message ?? "no rows matched — check update permissions for this caller"}`,
-      );
-    }
-
     const { data: imgData, error: downloadErr } = await supabase.storage
       .from("screenshots")
       .download(extraction.storage_path);

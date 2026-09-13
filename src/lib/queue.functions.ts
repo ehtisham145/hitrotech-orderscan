@@ -151,8 +151,12 @@ export const processExtractionNow = createServerFn({ method: "POST" })
     const result = (await runExtraction(context.supabase, extractionId)) as { ok: boolean; error?: string };
 
     // Keep transient infrastructure/provider issues retryable instead of turning
-    // an entire batch into permanent failures.
-    if (!result.ok && /AI not configured|AI rate limit|retrying|capacity|already_processing|already_claimed|proxy_/i.test(String(result.error))) {
+    // an entire batch into permanent failures. Deliberately excludes
+    // already_processing/already_claimed: that means a *different* caller won
+    // the atomic claim in extract-core.server and is actively working the row
+    // right now — resetting it to "pending" here would rip it out from under
+    // that in-flight worker instead of just being this caller's own no-op.
+    if (!result.ok && /AI not configured|AI rate limit|retrying|capacity|proxy_/i.test(String(result.error))) {
       await context.supabase
         .from("extractions")
         .update({ status: "pending", error_message: `${result.error} — retrying automatically`, updated_at: nowIso() })
