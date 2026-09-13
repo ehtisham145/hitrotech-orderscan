@@ -232,7 +232,7 @@ ${ocrText}
   });
 
   let aiRes: Response | undefined;
-  let provider = "gateway";
+  let provider: "groq" | "gemini" | "gateway" = "gateway";
   let directErrBody = "";
 
   // Groq is free and fast, but text-only (no vision endpoint used here) — so
@@ -347,16 +347,21 @@ ${ocrText}
   const data = parsed.data || {};
   const confidence = parsed.confidence || {};
 
-  return await finalizeExtraction(supabase, extraction, data, confidence, "gemini", Boolean(ocrResult));
+  return await finalizeExtraction(supabase, extraction, data, confidence, provider, Boolean(ocrResult));
 }
 
 /**
  * Shared tail for both extraction paths (template match and AI): normalizes
  * fields, applies batch defaults, checks for duplicate order numbers, and
- * writes the result. `source` is stored in raw_response so the template/AI
- * split is queryable later (`raw_response->>'source'`) — the cheapest signal
- * for noticing the client's page layout has drifted (template match rate
- * would drop) without adding a migration.
+ * writes the result. `source` is stored in raw_response so the
+ * template/groq/gemini/gateway split is queryable later
+ * (`raw_response->>'source'`) — the cheapest signal for noticing the
+ * client's page layout has drifted (template match rate would drop), or for
+ * checking how much load Groq is actually taking off Gemini, without adding
+ * a migration. Previously this was hardcoded to "gemini" for every non-
+ * template row regardless of which provider actually answered (a leftover
+ * from before Groq/the gateway existed as alternatives) — now it carries the
+ * real `provider` value from the AI call site.
  *
  * `ocrUsed` records whether the OCR service actually answered for this row
  * (vs. the screenshot going straight to the model because OCR was
@@ -371,7 +376,7 @@ async function finalizeExtraction(
   extraction: any,
   data: Record<string, any>,
   confidence: Record<string, number>,
-  source: "gemini" | "template",
+  source: "template" | "groq" | "gemini" | "gateway",
   ocrUsed: boolean,
 ): Promise<RunExtractionResult> {
   const update: Record<string, any> = {
