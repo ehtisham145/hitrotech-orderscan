@@ -30,14 +30,41 @@ ops/.state/
 ocr-service/ops/.state/
 /backups/
 ocr-service/backups/
+
+# Python (ocr-service)
 __pycache__/
 *.pyc
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+
+# TypeScript / test output
+*.tsbuildinfo
+coverage/
+.nyc_output/
+
+# Transfer/build artifacts (e.g. one-off VPS deploy packages) — never meant
+# to be committed, only ever produced locally or on a server.
+*.tar.gz
+*.tar
+
+# Keys/certs — defense in depth; real secrets belong in .env or the VPS,
+# never in the repo.
+*.pem
+*.key
+*.crt
+*.p12
 
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
 .idea
 .DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
 *.suo
 *.ntvs*
 *.njsproj
