@@ -378,15 +378,30 @@ function BatchDetail() {
         try {
           const result = await processExtractionNowFn({ data: { extraction_id: rowId } });
           const errMsg = result.error ?? "";
-          if (!result.ok && !/paused|cancelled|already_success/i.test(errMsg)) {
+          if (!result.ok) {
             console.warn("[batch direct processing] extraction did not complete", errMsg);
-            if (/AI not configured|AI rate limit|retrying|capacity|already_processing|already_claimed|claim_failed|proxy_/i.test(errMsg)) {
+            // Retry-eligible by default. The real gate is isEligibleRow()
+            // reading the row's actual DB status on the *next* pass — so
+            // there's no need to guess from the error text which failures
+            // are "worth" retrying, only which rows are truly gone.
+            // Guessing via an allow-list of specific error strings is
+            // exactly what caused two different server error codes
+            // (claim_failed, then ai_error) to each leave a perfectly
+            // retryable "pending" row stuck here forever, one at a time, as
+            // each new code showed up without a matching entry in that list.
+            if (errMsg !== "not_found") {
               browserProcessedIds.current.delete(rowId);
               directRetryAfter.current.set(rowId, Date.now() + 5_000);
             }
           }
         } catch (err) {
           console.error("[batch direct processing] failed", err);
+          // Unknown failure (e.g. a network blip calling the server
+          // function itself) — the row's real status is whatever the
+          // server left it as, not necessarily unclaimable. Same reasoning
+          // as above: let the next pass's real-status check decide.
+          browserProcessedIds.current.delete(rowId);
+          directRetryAfter.current.set(rowId, Date.now() + 5_000);
         } finally {
           qc.invalidateQueries({ queryKey: ["extractions", id] });
           qc.invalidateQueries({ queryKey: ["batch", id] });
