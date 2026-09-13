@@ -18,8 +18,11 @@ const CORE_FIELDS: ExtractField[] = ["order_number", "customer_name", "phone_num
 
 // Order matters only in that the first matching pattern wins if a line could
 // ambiguously match two — none currently do.
+//
+// order_number is deliberately NOT here: real OCR output (confirmed from a
+// live sample) has no "Order Number" label line at all — the code is simply
+// the first line, unlabeled. See ORDER_CODE_PATTERN below.
 const LABEL_MAP: Array<{ pattern: RegExp; field: ExtractField }> = [
-  { pattern: /^order\s*number$/i, field: "order_number" },
   { pattern: /^(onic|current)\s*(\/\s*onic)?\s*number$/i, field: "phone_number" },
   { pattern: /^name$/i, field: "customer_name" },
   { pattern: /^sim\s*type$/i, field: "sim_type" },
@@ -29,9 +32,19 @@ const LABEL_MAP: Array<{ pattern: RegExp; field: ExtractField }> = [
   { pattern: /^email$/i, field: "email" },
 ];
 
+// The unlabeled first-line order code, e.g. "CXO-2JDUW9NDWPXF6N3" — a short
+// run of letters, a hyphen, then the rest. If a real "Order Number" label
+// ever does appear before it, LABEL_MAP would need an entry for it too; this
+// pattern alone covers what's actually been observed.
+const ORDER_CODE_PATTERN = /^[A-Z]{2,6}-[A-Z0-9-]{4,}$/i;
+
 // Special-cased rather than in LABEL_MAP: one label's value splits into two
-// fields ("08 Aug 2026 | 11:50 AM" -> activation_date + activation_time).
+// fields. Real OCR output has no separator or even spacing between the parts
+// ("08 Aug202611:50 AM", not "08 Aug 2026 | 11:50 AM" — PaddleOCR merges the
+// thin "|" glyph into whitespace it then drops), so this pulls the date and
+// time out positionally instead of splitting on a delimiter.
 const ORDER_PLACED_PATTERN = /^order\s*placed\s*on$/i;
+const ORDER_PLACED_VALUE_PATTERN = /^(\d{1,2}\s*[A-Za-z]{3})\s*(\d{4})\s*(\d{1,2}:\d{2}\s*[AP]M)$/i;
 
 const DEFAULT_MIN_CONFIDENCE = 90;
 
@@ -64,15 +77,23 @@ export function tryTemplateExtraction(
 
   const data: Partial<Record<ExtractField, string | null>> = {};
 
+  // Unlabeled order code: only ever the very first line, so check it once
+  // rather than inside the label-scanning loop below.
+  if (lines[0] && ORDER_CODE_PATTERN.test(lines[0])) {
+    data.order_number = lines[0];
+  }
+
   for (let i = 0; i < lines.length - 1; i++) {
     const label = lines[i];
     const value = lines[i + 1];
     if (!value || isKnownLabel(value)) continue;
 
     if (ORDER_PLACED_PATTERN.test(label)) {
-      const [datePart, timePart] = value.split("|").map((s) => s.trim());
-      if (datePart) data.activation_date ??= datePart;
-      if (timePart) data.activation_time ??= timePart;
+      const dateTimeMatch = ORDER_PLACED_VALUE_PATTERN.exec(value);
+      if (dateTimeMatch) {
+        data.activation_date ??= `${dateTimeMatch[1]} ${dateTimeMatch[2]}`;
+        data.activation_time ??= dateTimeMatch[3];
+      }
       continue;
     }
 
