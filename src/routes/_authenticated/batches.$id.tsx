@@ -284,7 +284,13 @@ function BatchDetail() {
         }
       };
 
-      await Promise.all(Array.from({ length: Math.min(12, pending.length) }, () => worker()));
+      // Kept deliberately small: the OCR service processes one image at a time
+      // (OCR_MAX_CONCURRENCY on a modest host), so a large worker pool here just
+      // means most requests queue on the OCR side and burn their timeout budget
+      // waiting instead of extracting. A smaller pool spreads the same work over
+      // fewer simultaneous requests, which is lighter on both this server and OCR.
+      const MAX_PARALLEL_WORKERS = 4;
+      await Promise.all(Array.from({ length: Math.min(MAX_PARALLEL_WORKERS, pending.length) }, () => worker()));
     };
 
     void processRows().finally(() => {

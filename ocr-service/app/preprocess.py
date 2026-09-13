@@ -15,7 +15,10 @@ import cv2
 import numpy as np
 from PIL import Image
 
-MAX_SIDE = 1280
+# Lower this (e.g. to 960) on a memory-constrained host — detection memory
+# scales with pixel count, and a smaller canvas costs real accuracy only on
+# already-small source text, not on a normal phone screenshot.
+MAX_SIDE = int(os.environ.get("OCR_MAX_SIDE", "1280"))
 MIN_SIDE = 640
 
 # Inference memory tracks decoded pixels, not file bytes: a compact PNG can open

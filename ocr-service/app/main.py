@@ -35,11 +35,30 @@ app = FastAPI(title="OrderScan OCR", version="1.0.0")
 
 _engine: Any = None
 
-# One inference at a time. A single dense page allocates on the order of
-# gigabytes, so two overlapping passes on a small host is an OOM kill rather
-# than two slower responses — and a queued request that waits is strictly
-# better than a worker that dies mid-request.
+# One inference at a time by default. A single dense page allocates on the
+# order of gigabytes, so two overlapping passes on a small host is an OOM kill
+# rather than two slower responses.
 _inference_slot = asyncio.Semaphore(int(os.environ.get("OCR_MAX_CONCURRENCY", "1")))
+
+# On a weak host, a request that queues behind a busy slot and then times out
+# has paid the full wait for nothing. Failing it immediately instead lets the
+# caller (extract-core.server's readWithOcr) fall back to Gemini right away —
+# strictly faster, at the cost of routing more of a bulk batch to the paid
+# model instead of the free OCR path. Set to "false" to go back to queueing
+# (better OCR-path coverage under load, worse worst-case latency).
+OCR_FAIL_FAST = os.environ.get("OCR_FAIL_FAST", "true").lower() not in ("0", "false", "no")
+
+
+async def _try_claim_inference_slot() -> bool:
+    """Non-blocking-ish acquire: True if a slot was free immediately, False if
+    every slot is currently busy. Implemented via a near-zero timeout rather
+    than touching the Semaphore's private counter, so it stays correct across
+    asyncio implementations."""
+    try:
+        await asyncio.wait_for(_inference_slot.acquire(), timeout=0.001)
+        return True
+    except asyncio.TimeoutError:
+        return False
 
 
 def get_engine() -> Any:
@@ -129,12 +148,23 @@ async def _run_ocr(image_bytes: bytes) -> OcrResponse:
     except ValueError as err:
         raise HTTPException(status_code=400, detail=str(err)) from err
 
-    async with _inference_slot:
+    if OCR_FAIL_FAST:
+        if not await _try_claim_inference_slot():
+            raise HTTPException(status_code=503, detail="OCR busy — all inference slots occupied")
         try:
             raw = await asyncio.to_thread(lambda: get_engine().ocr(np.asarray(img), cls=True))
         except Exception as err:  # noqa: BLE001
             logger.exception("PaddleOCR failed")
             raise HTTPException(status_code=502, detail=f"OCR engine error: {err}") from err
+        finally:
+            _inference_slot.release()
+    else:
+        async with _inference_slot:
+            try:
+                raw = await asyncio.to_thread(lambda: get_engine().ocr(np.asarray(img), cls=True))
+            except Exception as err:  # noqa: BLE001
+                logger.exception("PaddleOCR failed")
+                raise HTTPException(status_code=502, detail=f"OCR engine error: {err}") from err
 
     lines: list[OcrLine] = []
     for page in raw or []:
