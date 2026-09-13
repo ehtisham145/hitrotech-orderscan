@@ -72,6 +72,9 @@ export async function runExtraction(supabase: SB, extractionId: string): Promise
 async function runExtractionUnguarded(supabase: SB, extractionId: string): Promise<RunExtractionResult> {
   const LOVABLE_API_KEY = process.env.LOVABLE_API_KEY;
   const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+  // Optional, free, text-only fallback tried ahead of Gemini — see its use
+  // below for why it's gated on ocrText existing.
+  const GROQ_API_KEY = process.env.GROQ_API_KEY;
 
   if (!LOVABLE_API_KEY && !GEMINI_API_KEY) {
     console.error("[extract-core] Both LOVABLE_API_KEY and GEMINI_API_KEY are missing in the server runtime");
@@ -228,48 +231,81 @@ ${ocrText}
     signal: AbortSignal.timeout(AI_TIMEOUT_MS),
   });
 
-  let aiRes: Response;
+  let aiRes: Response | undefined;
   let provider = "gateway";
   let directErrBody = "";
 
-  if (GEMINI_API_KEY) {
-    provider = "gemini";
+  // Groq is free and fast, but text-only (no vision endpoint used here) — so
+  // it's only worth trying when OCR already gave us text to extract from.
+  // The image-fallback case (ocrText null, OCR was unavailable) always goes
+  // straight to Gemini/gateway below, unchanged. A Groq failure here just
+  // falls through to that same chain rather than failing the row.
+  if (ocrText && GROQ_API_KEY) {
+    provider = "groq";
     try {
-      aiRes = await fetch("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", {
+      const groqRes = await fetch("https://api.groq.com/openai/v1/chat/completions", {
         method: "POST",
-        headers: { Authorization: `Bearer ${GEMINI_API_KEY}`, "Content-Type": "application/json" },
+        headers: { Authorization: `Bearer ${GROQ_API_KEY}`, "Content-Type": "application/json" },
         body: JSON.stringify({
-          model: "gemini-3.6-flash",
+          model: "llama-3.3-70b-versatile",
           messages,
           response_format: { type: "json_object" },
         }),
         signal: AbortSignal.timeout(AI_TIMEOUT_MS),
       });
-      if (!aiRes.ok) {
-        directErrBody = (await aiRes.text().catch(() => "")).slice(0, 500);
-        console.error(`[extract-core] Gemini direct failed ${aiRes.status}: ${directErrBody}`);
-        if (LOVABLE_API_KEY) {
-          provider = "gateway";
-          aiRes = await callGateway();
-        }
+      if (groqRes.ok) {
+        aiRes = groqRes;
+      } else {
+        directErrBody = (await groqRes.text().catch(() => "")).slice(0, 500);
+        console.error(`[extract-core] Groq failed ${groqRes.status}: ${directErrBody}`);
       }
     } catch (e: any) {
-      console.error("[extract-core] Gemini direct threw:", e?.message);
+      console.error("[extract-core] Groq threw:", e?.message);
       directErrBody = e?.message ?? "network error";
-      if (!LOVABLE_API_KEY) {
-        await supabase.from("extractions").update({
-          status: "pending",
-          error_message: `AI request failed: ${directErrBody}`.slice(0, 500),
-          updated_at: nowIso(),
-        }).eq("id", extraction.id);
-        await syncBatchCounts(supabase, extraction.batch_id);
-        return { ok: false, error: "ai_error" };
+    }
+  }
+
+  if (!aiRes) {
+    if (GEMINI_API_KEY) {
+      provider = "gemini";
+      try {
+        aiRes = await fetch("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${GEMINI_API_KEY}`, "Content-Type": "application/json" },
+          body: JSON.stringify({
+            model: "gemini-3.6-flash",
+            messages,
+            response_format: { type: "json_object" },
+          }),
+          signal: AbortSignal.timeout(AI_TIMEOUT_MS),
+        });
+        if (!aiRes.ok) {
+          directErrBody = (await aiRes.text().catch(() => "")).slice(0, 500);
+          console.error(`[extract-core] Gemini direct failed ${aiRes.status}: ${directErrBody}`);
+          if (LOVABLE_API_KEY) {
+            provider = "gateway";
+            aiRes = await callGateway();
+          }
+        }
+      } catch (e: any) {
+        console.error("[extract-core] Gemini direct threw:", e?.message);
+        directErrBody = e?.message ?? "network error";
+        if (!LOVABLE_API_KEY) {
+          await supabase.from("extractions").update({
+            status: "pending",
+            error_message: `AI request failed: ${directErrBody}`.slice(0, 500),
+            updated_at: nowIso(),
+          }).eq("id", extraction.id);
+          await syncBatchCounts(supabase, extraction.batch_id);
+          return { ok: false, error: "ai_error" };
+        }
+        provider = "gateway";
+        aiRes = await callGateway();
       }
+    } else {
       provider = "gateway";
       aiRes = await callGateway();
     }
-  } else {
-    aiRes = await callGateway();
   }
 
   if (!aiRes.ok) {
