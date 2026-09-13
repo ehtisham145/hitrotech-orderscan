@@ -14,7 +14,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ArrowLeft, ArrowUpDown, ArrowUp, ArrowDown, Download, RefreshCw, AlertTriangle, Eye, Save, Trash2, CheckCheck, PlayCircle, PauseCircle, XCircle, FileText, Search, BrainCircuit, Loader2 } from "lucide-react";
+import { ArrowLeft, ArrowUpDown, ArrowUp, ArrowDown, Download, RefreshCw, AlertTriangle, Eye, Save, Trash2, CheckCheck, PlayCircle, PauseCircle, XCircle, FileText, Search, BrainCircuit, Loader2, ImageOff } from "lucide-react";
 import { toast } from "sonner";
 import { EXTRACT_FIELDS, FIELD_LABELS, type ExtractField } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -969,6 +969,15 @@ function StatusBadge({ row, onRetry }: { row: any; onRetry: () => void }) {
         />
       )}
       {row.needs_review && <Badge variant="outline" className="border-yellow-500/40 text-yellow-700 rounded-2xl"><AlertTriangle className="w-3 h-3 mr-0.5" />Review</Badge>}
+      {row.raw_response?.ocrUsed === false && (
+        <Badge
+          variant="outline"
+          title="OCR was unavailable for this image — it went straight to the AI model instead. Not an error, just a sign OCR is under load."
+          className="border-slate-400/40 text-slate-500 rounded-2xl"
+        >
+          <ImageOff className="w-3 h-3 mr-0.5" />No OCR
+        </Badge>
+      )}
     </div>
   );
 }

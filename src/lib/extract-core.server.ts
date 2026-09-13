@@ -443,7 +443,7 @@ async function runExtractionUnguarded(supabase: SB, extractionId: string): Promi
       const templateEnabled = (process.env.TEMPLATE_EXTRACTION_ENABLED ?? "false").toLowerCase() === "true";
       if (templateEnabled) {
         console.log(`[extract-core] Template match for ${extraction.id} — skipping AI`);
-        return await finalizeExtraction(supabase, extraction, templateResult.data, templateResult.confidence, "template");
+        return await finalizeExtraction(supabase, extraction, templateResult.data, templateResult.confidence, "template", true);
       }
       // Shadow mode: log what the template path would have returned, then
       // fall through to the real (Gemini) path below unchanged, so the two
@@ -571,7 +571,7 @@ ${ocrText}
   const data = parsed.data || {};
   const confidence = parsed.confidence || {};
 
-  return await finalizeExtraction(supabase, extraction, data, confidence, "gemini");
+  return await finalizeExtraction(supabase, extraction, data, confidence, "gemini", Boolean(ocrResult));
 }
 
 /**
@@ -581,6 +581,14 @@ ${ocrText}
  * split is queryable later (`raw_response->>'source'`) — the cheapest signal
  * for noticing the client's page layout has drifted (template match rate
  * would drop) without adding a migration.
+ *
+ * `ocrUsed` records whether the OCR service actually answered for this row
+ * (vs. the screenshot going straight to the model because OCR was
+ * unavailable). Before this, that fact only ever reached a server
+ * `console.warn` — a row that succeeded looked identical in the UI whether
+ * OCR helped or not, so a pattern of "OCR keeps failing under load" was only
+ * diagnosable by reading server logs. batches.$id.tsx's StatusBadge reads
+ * this off a successful row to show a small "No OCR" marker instead.
  */
 async function finalizeExtraction(
   supabase: SB,
@@ -588,12 +596,13 @@ async function finalizeExtraction(
   data: Record<string, any>,
   confidence: Record<string, number>,
   source: "gemini" | "template",
+  ocrUsed: boolean,
 ): Promise<RunExtractionResult> {
   const update: Record<string, any> = {
     status: "success",
     confidence,
     avg_confidence: avgConfidence(confidence),
-    raw_response: { source, data, confidence } as any,
+    raw_response: { source, data, confidence, ocrUsed } as any,
     error_message: null,
     // No processing_completed_at column exists on extractions; updated_at is
     // what actually records when the row reached this state.
