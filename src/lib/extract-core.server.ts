@@ -247,7 +247,11 @@ ${ocrText}
         method: "POST",
         headers: { Authorization: `Bearer ${GROQ_API_KEY}`, "Content-Type": "application/json" },
         body: JSON.stringify({
-          model: "llama-3.3-70b-versatile",
+          // This account's available model list has no classic llama-3.x
+          // chat model (confirmed via GET /openai/v1/models) — gpt-oss-120b
+          // is the general-purpose text model actually on it. Re-check that
+          // endpoint before changing this again rather than guessing a name.
+          model: "openai/gpt-oss-120b",
           messages,
           response_format: { type: "json_object" },
         }),
