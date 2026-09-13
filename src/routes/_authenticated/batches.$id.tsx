@@ -73,6 +73,50 @@ function isRedrivableFailure(
   );
 }
 
+type ClaimableRow = { id: string; status: string; error_message?: string | null; updated_at?: string | null };
+type ClaimableBatch = { status: string } | null | undefined;
+
+/**
+ * Whether the batch itself is in a state where new claims should even be
+ * attempted — independent of whether any individual row looks eligible.
+ *
+ * Pulled out as its own function (rather than living inline in claimNext())
+ * after a real production freeze: stillHasClaimableWork() checked row
+ * eligibility only, without this batch-level gate, while claimNext() checked
+ * both. For any paused/cancelled batch that still had a genuinely "pending"
+ * row (completely normal — that's what pausing mid-batch looks like),
+ * claimNext() correctly refused every claim while stillHasClaimableWork()
+ * kept saying yes — spinning the direct-processing effect's wave loop
+ * forever with no real async work in it, pegging a CPU core and freezing the
+ * tab. Sharing one function for both closes the gap for good instead of
+ * just patching this one instance of it.
+ */
+function canClaimFromBatch(batch: ClaimableBatch, rows: ClaimableRow[] | null | undefined, autoRetryCounts: Map<string, number>) {
+  if (!batch) return false;
+  if (batch.status === "paused" || batch.status === "cancelled") return false;
+  if (batch.status === "completed") {
+    const hasRecoverableFailures = rows?.some((r) => isRedrivableFailure(r, autoRetryCounts)) ?? false;
+    if (!hasRecoverableFailures) return false;
+  }
+  return true;
+}
+
+/** Same row-eligibility rule shared by hasClaimableWork/claimNext/stillHasClaimableWork. */
+function isEligibleRow(
+  row: ClaimableRow,
+  browserProcessedIds: Set<string>,
+  directRetryAfter: Map<string, number>,
+  autoRetryCounts: Map<string, number>,
+  now: number,
+) {
+  return (
+    (row.status === "pending" || isRedrivableFailure(row, autoRetryCounts)) &&
+    !isStaleProcessingRow(row) &&
+    !browserProcessedIds.has(row.id) &&
+    (directRetryAfter.get(row.id) ?? 0) <= now
+  );
+}
+
 export const Route = createFileRoute("/_authenticated/batches/$id")({
   validateSearch: zodValidator(filterSchema),
   head: () => ({
@@ -283,13 +327,8 @@ function BatchDetail() {
   // snapshot frozen at wave-start — so an unrelated re-render can no longer
   // starve rows that are still waiting for a worker.
   const hasClaimableWork = Boolean(
-    rows?.some(
-      (r) =>
-        (r.status === "pending" || isRedrivableFailure(r, autoRetryCounts.current)) &&
-        !isStaleProcessingRow(r) &&
-        !browserProcessedIds.current.has(r.id) &&
-        (directRetryAfter.current.get(r.id) ?? 0) <= Date.now(),
-    ),
+    canClaimFromBatch(batch, rows, autoRetryCounts.current) &&
+      rows?.some((r) => isEligibleRow(r, browserProcessedIds.current, directRetryAfter.current, autoRetryCounts.current, Date.now())),
   );
 
   useEffect(() => {
@@ -301,19 +340,10 @@ function BatchDetail() {
     const claimNext = (): string | null => {
       const currentBatch = batchRef.current;
       const currentRows = rowsRef.current;
-      if (!currentBatch || !currentRows) return null;
-      if (currentBatch.status === "paused" || currentBatch.status === "cancelled") return null;
-      const hasRecoverableFailures = currentRows.some((r) => isRedrivableFailure(r, autoRetryCounts.current));
-      if (currentBatch.status === "completed" && !hasRecoverableFailures) return null;
+      if (!currentRows || !canClaimFromBatch(currentBatch, currentRows, autoRetryCounts.current)) return null;
 
       const now = Date.now();
-      const row = currentRows.find(
-        (r) =>
-          (r.status === "pending" || isRedrivableFailure(r, autoRetryCounts.current)) &&
-          !isStaleProcessingRow(r) &&
-          !browserProcessedIds.current.has(r.id) &&
-          (directRetryAfter.current.get(r.id) ?? 0) <= now,
-      );
+      const row = currentRows.find((r) => isEligibleRow(r, browserProcessedIds.current, directRetryAfter.current, autoRetryCounts.current, now));
       if (!row) return null;
       browserProcessedIds.current.add(row.id);
       if (row.status === "failed") {
@@ -327,18 +357,17 @@ function BatchDetail() {
     // read-only pass (rather than reusing hasClaimableWork, which closes over
     // the `rows` from the render that started this effect) because this runs
     // *inside* the effect, potentially long after that render, and needs
-    // rowsRef's current value instead.
+    // rowsRef's current value instead. Shares canClaimFromBatch/isEligibleRow
+    // with claimNext() so the two can never again disagree about whether a
+    // paused/cancelled/completed batch still has anything worth claiming —
+    // see canClaimFromBatch's own comment for what happened the one time
+    // they did.
     const stillHasClaimableWork = (): boolean => {
       const currentRows = rowsRef.current;
+      if (!canClaimFromBatch(batchRef.current, currentRows, autoRetryCounts.current)) return false;
       const now = Date.now();
       return Boolean(
-        currentRows?.some(
-          (r) =>
-            (r.status === "pending" || isRedrivableFailure(r, autoRetryCounts.current)) &&
-            !isStaleProcessingRow(r) &&
-            !browserProcessedIds.current.has(r.id) &&
-            (directRetryAfter.current.get(r.id) ?? 0) <= now,
-        ),
+        currentRows?.some((r) => isEligibleRow(r, browserProcessedIds.current, directRetryAfter.current, autoRetryCounts.current, now)),
       );
     };
 
