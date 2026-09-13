@@ -449,11 +449,6 @@ async function runExtractionUnguarded(supabase: SB, extractionId: string): Promi
       // fall through to the real (Gemini) path below unchanged, so the two
       // can be compared per-row before TEMPLATE_EXTRACTION_ENABLED is flipped on.
       console.log(`[extract-core] [shadow] template would match for ${extraction.id}:`, JSON.stringify(templateResult.data));
-    } else {
-      // Temporary diagnostic: template never matched on real uploads (0/18).
-      // Print the raw OCR text so we can see what the labels actually look
-      // like — remove once template-extract.ts's label list is corrected.
-      console.log(`[extract-core] [shadow-miss] ${extraction.id} ocrConfidence=${ocrResult.confidence} rawText=`, JSON.stringify(ocrResult.text));
     }
   }
 
