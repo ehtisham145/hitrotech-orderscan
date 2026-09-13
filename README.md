@@ -99,10 +99,13 @@ src/
   routes/                  Pages (TanStack Router) + API routes (src/routes/api)
     _authenticated/         Admin panel, partner portal, batches, dashboard, reports
     api/                     extract.ts, queue-extractions.ts, health.ts, export/email endpoints
-  lib/                      Business logic — commissions, payouts, billing, reconciliation,
-                              extract-core.server.ts (the whole extraction routine, start here)
-  components/               UI components, dashboard charts
-  integrations/supabase/    Supabase clients (main + external), auth middleware
+  lib/                      Server functions + business logic — commissions, payouts, billing,
+                              reconciliation. extract-core.server.ts is the extraction entry
+                              point; the prompt, OCR read, and batch-count-sync it uses live in
+                              lib/extraction/.
+  components/               Reusable UI components, dashboard charts
+  integrations/supabase/    Supabase clients for the external (business-data) project — browser
+                              client, service-role/admin client, and per-request auth middleware
 ocr-service/                Standalone FastAPI OCR microservice (own README, own ops/)
 supabase/                   DB migrations + edge functions (external project)
 ops/                        Deploy/rollback/health/monitor/backup scripts for the main app
@@ -110,6 +113,24 @@ docker-compose.dev.yml      Local containerized dev (hot reload)
 docker-compose.prod.yml     VPS production stack (+ optional nginx/certbot "proxy" profile)
 Dockerfile                  Multi-stage: dev / build / prod (Nitro node-server preset)
 ```
+
+### Where's the boundary between frontend and backend?
+
+This is a full-stack framework (TanStack Start) — pages and their server
+functions intentionally live in the same route tree, not in separate
+top-level folders. `src/routes/` is scanned by a wrapped TanStack config
+(`@lovable.dev/vite-tanstack-config` in `vite.config.ts`) for file-based
+routing, so it can't be relocated without touching that build config. The
+frontend/backend split still exists — it's just expressed through file
+naming inside `src/lib/`, not folder location:
+
+| Where | What it is |
+|---|---|
+| `src/routes/`, `src/components/` | **Frontend** — pages and UI |
+| `src/lib/*.functions.ts` | **Backend** — server functions (`createServerFn`), the only backend surface the frontend is allowed to call |
+| `src/lib/*.server.ts` (incl. `src/lib/extraction/*.server.ts`) | **Backend-only** internals — never imported by browser code, only by the `.functions.ts` files and API routes above |
+| `src/lib/*.ts` with no suffix | Shared pure helpers/types — safe in both bundles |
+| `ocr-service/`, `ops/`, `docker-compose*.yml` | **Deployment/infra** |
 
 ## Local development
 
