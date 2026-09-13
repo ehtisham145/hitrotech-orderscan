@@ -20,6 +20,19 @@ services:
     # swapfile on the host (see ops/deploy.sh docs); without one this has no
     # effect and mem_limit alone still applies.
     memswap_limit: ${OCR_MEMORY_SWAP_LIMIT:-8g}
+    volumes:
+      # PaddleOCR downloads its model weights to $HOME/.paddleocr (confirmed:
+      # /app/.paddleocr, since the Dockerfile sets HOME=/app) on first use.
+      # The Dockerfile deliberately does NOT bake models in at build time (see
+      # its comment — that step reproducibly corrupted mid-build on this VPS),
+      # so without this volume every `ops/deploy.sh` run — which builds a new
+      # image and recreates the container — would re-download the models from
+      # scratch on a bare container filesystem. That download can take longer
+      # than health.sh's ~60s retry budget on a slow network, which would make
+      # deploy.sh roll back a perfectly good deploy for being "unhealthy" when
+      # it was really just still downloading. Persisting the cache here means
+      # only the very first deploy ever pays that cost.
+      - ocr-model-cache:/app/.paddleocr
     cpus: ${OCR_CPU_LIMIT:-2}
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8080/health"]
@@ -67,6 +80,7 @@ services:
 volumes:
   certbot-etc:
   certbot-www:
+  ocr-model-cache:
 
 networks:
   # Shared with the main app's docker-compose.prod.yml so it can reach this

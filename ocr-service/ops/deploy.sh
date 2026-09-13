@@ -42,7 +42,13 @@ log_info "Starting containers..."
 IMAGE_TAG="latest" compose "${profile_args[@]}" up -d --remove-orphans
 
 log_info "Waiting for health check..."
-if "$OPS_DIR/health.sh" --retries 20 --interval 3; then
+# 40x3s=120s, not the usual 60s: on a container that has never run before (or
+# after the ocr-model-cache volume was wiped) this is the one deploy that
+# pays for PaddleOCR's model download on top of normal startup, and a 60s
+# budget was tight enough to risk a false-positive rollback for that reason
+# alone. Every deploy after the first reuses the cached volume and returns
+# healthy in seconds, same as before.
+if "$OPS_DIR/health.sh" --retries 40 --interval 3; then
   echo "$timestamp" >> "$STATE_DIR/deploy.log"
   log_ok "Deploy succeeded — image $IMAGE_NAME:$timestamp is live"
   exit 0
