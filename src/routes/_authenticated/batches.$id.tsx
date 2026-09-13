@@ -321,6 +321,26 @@ function BatchDetail() {
       return row.id;
     };
 
+    // Same eligibility check as claimNext(), without claiming — used only to
+    // decide whether it's worth starting another wave. Kept as a separate
+    // read-only pass (rather than reusing hasClaimableWork, which closes over
+    // the `rows` from the render that started this effect) because this runs
+    // *inside* the effect, potentially long after that render, and needs
+    // rowsRef's current value instead.
+    const stillHasClaimableWork = (): boolean => {
+      const currentRows = rowsRef.current;
+      const now = Date.now();
+      return Boolean(
+        currentRows?.some(
+          (r) =>
+            (r.status === "pending" || isRedrivableFailure(r, autoRetryCounts.current)) &&
+            !isStaleProcessingRow(r) &&
+            !browserProcessedIds.current.has(r.id) &&
+            (directRetryAfter.current.get(r.id) ?? 0) <= now,
+        ),
+      );
+    };
+
     const worker = async () => {
       while (!cancelled) {
         const rowId = claimNext();
@@ -353,11 +373,26 @@ function BatchDetail() {
     // claimNext() returning null immediately, so it's safe to always spin up
     // the full count rather than sizing it to a (now nonexistent) static list.
     const MAX_PARALLEL_WORKERS = 4;
-    void Promise.all(Array.from({ length: MAX_PARALLEL_WORKERS }, () => worker())).finally(() => {
+    const runWave = () => Promise.all(Array.from({ length: MAX_PARALLEL_WORKERS }, () => worker()));
+
+    void (async () => {
+      await runWave();
+      // A wave ends the instant every worker's claimNext() comes up empty.
+      // hasClaimableWork (the effect's own dependency, above) would normally
+      // be what starts the next wave — but it only retriggers this effect on
+      // a false→true *transition*, and it never had a chance to observe
+      // false in between if new work (e.g. another upload to this same open
+      // page) lands in the brief window between this wave's last claim and
+      // its Promise.all settling. Re-checking directly here, before handing
+      // control back, closes that window instead of leaving newly-arrived
+      // rows waiting for some unrelated future change to nudge the effect.
+      while (!cancelled && stillHasClaimableWork()) {
+        await runWave();
+      }
       browserProcessing.current = false;
       qc.invalidateQueries({ queryKey: ["extractions", id] });
       qc.invalidateQueries({ queryKey: ["batch", id] });
-    });
+    })();
 
     return () => {
       cancelled = true;
