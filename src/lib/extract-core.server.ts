@@ -4,6 +4,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/integrations/supabase/types";
 import { normalizePhone, normalizeCnic, avgConfidence, EXTRACT_FIELDS } from "@/lib/format";
+import { tryTemplateExtraction } from "@/lib/template-extract";
 import { z } from "zod";
 
 const SYSTEM_PROMPT = `You are an expert at extracting structured data from telecom order screenshots (WhatsApp, POS, CRM). Extract every field you can find. If a field is missing, use null. Look carefully — labels may vary (e.g. "MSISDN"/"Mobile"/"Onic Number" all mean phone_number). Return ONLY valid JSON matching this exact schema:
@@ -246,11 +247,13 @@ const MAX_IMAGE_BYTES = Number(process.env.MAX_IMAGE_BYTES) || 12 * 1024 * 1024;
  * the screenshot to the model directly. Losing OCR costs accuracy on the field
  * layout, not the extraction itself, so it is never worth failing a row over.
  */
+type OcrReadResult = { text: string; confidence: number };
+
 async function readWithOcr(
   bytes: Buffer,
   mimeType: string,
   fileName: string | null,
-): Promise<string | null> {
+): Promise<OcrReadResult | null> {
   const ocrUrl = process.env.OCR_URL;
   const ocrApiKey = process.env.OCR_API_KEY;
   if (!ocrUrl) return null;
@@ -279,11 +282,15 @@ async function readWithOcr(
       throw new Error(`${res.status}: ${body.slice(0, 200)}`);
     }
 
-    const text = ((await res.json())?.text ?? "").trim();
+    const json: any = await res.json();
+    const text = (json?.text ?? "").trim();
     if (!text) throw new Error("returned no text");
+    // 0-1 scale from the OCR service (average of per-line scores). Used by
+    // tryTemplateExtraction as its second trust gate.
+    const confidence = typeof json?.confidence === "number" ? json.confidence : 0;
 
     console.log(`[extract-core] OCR read ${text.length} chars in ${Date.now() - startedAt}ms`);
-    return text;
+    return { text, confidence };
   } catch (err: any) {
     console.warn(
       `[extract-core] OCR unavailable after ${Date.now() - startedAt}ms (${err.message}) — sending the screenshot to the model instead`,
@@ -394,7 +401,27 @@ async function runExtractionUnguarded(supabase: SB, extractionId: string): Promi
     return { ok: false, error: "image_unavailable" };
   }
 
-  const ocrText = await readWithOcr(imageBytes, mimeType, extraction.file_name);
+  const ocrResult = await readWithOcr(imageBytes, mimeType, extraction.file_name);
+  const ocrText = ocrResult?.text ?? null;
+
+  // Fast path: the client's own rendered order page is a fixed, known layout
+  // (see src/lib/template-extract.ts). When it matches with high confidence,
+  // this skips the AI call entirely — the whole reason OCR is the primary
+  // path at all is that the AI call is the expensive part.
+  if (ocrResult) {
+    const templateResult = tryTemplateExtraction(ocrResult.text, ocrResult.confidence);
+    if (templateResult) {
+      const templateEnabled = (process.env.TEMPLATE_EXTRACTION_ENABLED ?? "false").toLowerCase() === "true";
+      if (templateEnabled) {
+        console.log(`[extract-core] Template match for ${extraction.id} — skipping AI`);
+        return await finalizeExtraction(supabase, extraction, templateResult.data, templateResult.confidence, "template");
+      }
+      // Shadow mode: log what the template path would have returned, then
+      // fall through to the real (Gemini) path below unchanged, so the two
+      // can be compared per-row before TEMPLATE_EXTRACTION_ENABLED is flipped on.
+      console.log(`[extract-core] [shadow] template would match for ${extraction.id}:`, JSON.stringify(templateResult.data));
+    }
+  }
 
   const userContent = ocrText
     ? [
@@ -514,18 +541,36 @@ ${ocrText}
 
   const data = parsed.data || {};
   const confidence = parsed.confidence || {};
-  
+
+  return await finalizeExtraction(supabase, extraction, data, confidence, "gemini");
+}
+
+/**
+ * Shared tail for both extraction paths (template match and AI): normalizes
+ * fields, applies batch defaults, checks for duplicate order numbers, and
+ * writes the result. `source` is stored in raw_response so the template/AI
+ * split is queryable later (`raw_response->>'source'`) — the cheapest signal
+ * for noticing the client's page layout has drifted (template match rate
+ * would drop) without adding a migration.
+ */
+async function finalizeExtraction(
+  supabase: SB,
+  extraction: any,
+  data: Record<string, any>,
+  confidence: Record<string, number>,
+  source: "gemini" | "template",
+): Promise<RunExtractionResult> {
   const update: Record<string, any> = {
     status: "success",
     confidence,
     avg_confidence: avgConfidence(confidence),
-    raw_response: parsed as any,
+    raw_response: { source, data, confidence } as any,
     error_message: null,
     // No processing_completed_at column exists on extractions; updated_at is
     // what actually records when the row reached this state.
     updated_at: nowIso(),
   };
-  
+
   for (const f of EXTRACT_FIELDS) update[f] = data[f] ?? null;
   update.phone_number = normalizePhone(data.phone_number);
   update.cnic = normalizeCnic(data.cnic);
@@ -538,7 +583,7 @@ ${ocrText}
   }
 
   update.needs_review = Object.values(confidence).some((v: any) => typeof v === "number" && v < 90);
-  
+
   const incomingOrder = (data.order_number ?? "").toString().trim().toUpperCase().replace(/O/g, "0").replace(/[IL]/g, "1");
   if (incomingOrder) {
     const { data: match } = await supabase.from("extractions")
@@ -578,7 +623,6 @@ ${ocrText}
       writeErr = retry.error;
     }
   }
-
 
   // Reporting success for a result that was never stored would leave the row
   // queued forever while the batch counted it as done.
