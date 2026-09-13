@@ -175,6 +175,20 @@ function BatchDetail() {
   const runQueue = useCallback(
     async (ids: string[], mode: "auto" | "manual" = "manual") => {
       if (ids.length === 0 || queueRunning) return;
+      // Any explicit (re)queue — the Retry button, "Requeue failed", bulk
+      // re-queue, or Start/Resume picking up recoverable failures — means
+      // "give this row a fresh attempt" regardless of whatever the
+      // direct-processing effect remembers about it. Without clearing these,
+      // a row whose earlier failure didn't match the auto-retry patterns
+      // below would go back to "pending" here but then never actually get
+      // reprocessed: browserProcessedIds marks it claimed for the rest of
+      // the page's life once claimNext() has ever picked it up, so the
+      // direct-processing effect would silently skip it forever, leaving it
+      // stuck at "pending" until a full page reload.
+      for (const rowId of ids) {
+        browserProcessedIds.current.delete(rowId);
+        directRetryAfter.current.delete(rowId);
+      }
       setQueueRunning(true);
       try {
         const res = await queueExtractionsFn({ data: { extraction_ids: ids } });
