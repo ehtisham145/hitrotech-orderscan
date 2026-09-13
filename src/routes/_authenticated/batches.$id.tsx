@@ -9,17 +9,18 @@ import { supabase } from "@/integrations/supabase/ext-client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ArrowLeft, ArrowUpDown, ArrowUp, ArrowDown, Download, RefreshCw, AlertTriangle, Eye, Save, Trash2, CheckCheck, PlayCircle, PauseCircle, XCircle, FileText, Search, BrainCircuit, Loader2, ImageOff } from "lucide-react";
+import { ArrowLeft, Download, RefreshCw, Eye, Trash2, CheckCheck, PlayCircle, PauseCircle, XCircle, FileText, Search } from "lucide-react";
 import { toast } from "sonner";
 import { EXTRACT_FIELDS, FIELD_LABELS, type ExtractField } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { ConfidenceDot } from "@/components/ConfidenceDot";
-import { DuplicateBadge } from "@/components/DuplicateBadge";
+import { StatusBadge } from "@/components/StatusBadge";
+import { SortableTh } from "@/components/SortableTh";
+import { FilterSelect } from "@/components/FilterSelect";
+import { EditableCell } from "@/components/EditableCell";
 import { useServerFn } from "@tanstack/react-start";
 import { keepBatchRowsFresh, processExtractionNow, queueExtractions } from "@/lib/queue.functions";
 
@@ -881,143 +882,6 @@ function BatchDetail() {
         </DialogContent>
       </Dialog>
 
-    </div>
-  );
-}
-
-
-
-
-function SortableTh({ label, active, dir, onClick, className }: { label: string; active: boolean; dir: "asc" | "desc"; onClick: () => void; className?: string }) {
-  const Icon = !active ? ArrowUpDown : dir === "asc" ? ArrowUp : ArrowDown;
-  return (
-    <th className={cn("text-left p-2", className)}>
-      <button
-        type="button"
-        onClick={onClick}
-        className="inline-flex items-center gap-1 hover:text-foreground text-muted-foreground uppercase tracking-wider text-[10px] font-medium"
-        aria-label={`Sort by ${label} ${active && dir === "asc" ? "descending" : "ascending"}`}
-      >
-        {label}
-        <Icon className={cn("w-3 h-3", active ? "opacity-100" : "opacity-40")} />
-      </button>
-    </th>
-  );
-}
-
-function FilterSelect({ label, value, onChange, options }: { label: string; value: string; onChange: (v: string) => void; options: Array<{ v: string; l: string }> }) {
-  return (
-    <div className="space-y-1">
-      <div className="text-[10px] uppercase text-muted-foreground">{label}</div>
-      <Select value={value} onValueChange={onChange}>
-        <SelectTrigger className="h-8 w-36 text-xs"><SelectValue /></SelectTrigger>
-        <SelectContent>
-          {options.map((o) => (
-            <SelectItem key={o.v} value={o.v}>{o.l}</SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-    </div>
-  );
-}
-
-type StatusBadgeRow = {
-  id: string;
-  batch_id: string | null;
-  status: string;
-  is_duplicate: boolean;
-  needs_review: boolean;
-  error_message: string | null;
-  duplicate_of?: string | null;
-  customer_name?: string | null;
-  phone_number?: string | null;
-  cnic?: string | null;
-  order_number?: string | null;
-  created_at?: string;
-};
-
-function StatusBadge({ row, onRetry }: { row: any; onRetry: () => void }) {
-  if (row.status === "pending") return <Badge variant="secondary" className="bg-muted text-muted-foreground border-none rounded-2xl"><RefreshCw className="w-3 h-3 mr-1 animate-spin-slow" /> Queued</Badge>;
-  if (row.status === "processing") return <Badge variant="secondary" className="bg-primary/10 text-primary border-none animate-pulse rounded-2xl"><Loader2 className="w-3 h-3 mr-1 animate-spin" /> Processing</Badge>;
-  if (row.status === "ocr_completed") return <Badge variant="secondary" className="bg-blue-500/10 text-blue-600 border-none rounded-2xl"><FileText className="w-3 h-3 mr-1" /> OCR Done</Badge>;
-  if (row.status === "extracting") return <Badge variant="secondary" className="bg-purple-500/10 text-purple-600 border-none rounded-2xl"><BrainCircuit className="w-3 h-3 mr-1 animate-pulse" /> AI Extracting</Badge>;
-  if (row.status === "paused") return <Badge variant="outline" className="text-amber-600 border-amber-200 bg-amber-50 rounded-2xl"><PauseCircle className="w-3 h-3 mr-1" /> Paused</Badge>;
-  if (row.status === "cancelled") return <Badge variant="outline" className="text-muted-foreground border-muted rounded-2xl"><XCircle className="w-3 h-3 mr-1" /> Cancelled</Badge>;
-  if (row.status === "failed")
-    return (
-      <div className="flex items-center gap-1">
-        <Badge variant="destructive" title={row.error_message ?? undefined} className="border-none rounded-2xl"><AlertTriangle className="w-3 h-3 mr-1" /> Failed</Badge>
-        <Button variant="ghost" size="sm" className="h-6 px-2" onClick={onRetry} aria-label="Retry extraction"><RefreshCw className="w-3 h-3" /></Button>
-      </div>
-    );
-  return (
-    <div className="flex items-center gap-1 flex-wrap">
-      <Badge variant="outline" className="border-emerald-500/30 text-emerald-700 dark:text-emerald-400 rounded-2xl">OK</Badge>
-      {row.is_duplicate && (
-        <DuplicateBadge
-          extraction={{
-            id: row.id,
-            batch_id: row.batch_id,
-            customer_name: row.customer_name ?? null,
-            phone_number: row.phone_number ?? null,
-            cnic: row.cnic ?? null,
-            order_number: row.order_number ?? null,
-            created_at: row.created_at ?? new Date().toISOString(),
-            is_duplicate: row.is_duplicate,
-            duplicate_of: row.duplicate_of ?? null,
-          }}
-        />
-      )}
-      {row.needs_review && <Badge variant="outline" className="border-yellow-500/40 text-yellow-700 rounded-2xl"><AlertTriangle className="w-3 h-3 mr-0.5" />Review</Badge>}
-      {row.raw_response?.ocrUsed === false && (
-        <Badge
-          variant="outline"
-          title="OCR was unavailable for this image — it went straight to the AI model instead. Not an error, just a sign OCR is under load."
-          className="border-slate-400/40 text-slate-500 rounded-2xl"
-        >
-          <ImageOff className="w-3 h-3 mr-0.5" />No OCR
-        </Badge>
-      )}
-    </div>
-  );
-}
-
-function EditableCell({ value, confidence, onSave, disabled }: { value: string; confidence?: number; onSave: (v: string) => void; disabled?: boolean }) {
-  const [v, setV] = useState(value);
-  const [editing, setEditing] = useState(false);
-  useEffect(() => setV(value), [value]);
-  const lowConf = typeof confidence === "number" && confidence < 90;
-
-  if (disabled) return <span className="text-slate-300 italic text-[11px]">—</span>;
-  if (!editing) {
-    return (
-      <button
-        onClick={() => setEditing(true)}
-        className={cn(
-          "text-left w-full px-2 py-1 rounded-2xl hover:bg-muted text-xs truncate max-w-[180px] block",
-          lowConf && "bg-yellow-100/60 dark:bg-yellow-900/30",
-        )}
-        title={value + (typeof confidence === "number" ? ` (${confidence}%)` : "")}
-      >
-        {value || <span className="text-slate-300 italic">—</span>}
-      </button>
-    );
-  }
-  return (
-    <div className="flex gap-1">
-      <Input
-        value={v}
-        onChange={(e) => setV(e.target.value)}
-        className="h-7 text-xs"
-        autoFocus
-        onKeyDown={(e) => {
-          if (e.key === "Enter") { onSave(v); setEditing(false); }
-          if (e.key === "Escape") { setV(value); setEditing(false); }
-        }}
-      />
-      <Button size="sm" className="h-7 px-2" onClick={() => { onSave(v); setEditing(false); }} aria-label="Save">
-        <Save className="w-3 h-3" />
-      </Button>
     </div>
   );
 }
