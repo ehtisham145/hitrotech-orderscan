@@ -1,6 +1,8 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/ext-auth-middleware";
 import { z } from "zod";
+import type { Database } from "@/integrations/supabase/types";
 
 const inputSchema = z.object({
   name: z.string().min(1),
@@ -17,10 +19,12 @@ const inputSchema = z.object({
   }),
 });
 
-export const createBatchWithExtractions = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((data) => inputSchema.parse(data))
-  .handler(async ({ data, context }) => {
+type ServerContext = { supabase: SupabaseClient<Database>; userId: string };
+
+// Handler logic pulled out of createServerFn(...).handler() so it's callable
+// directly from Vitest without a real HTTP request — see queue.functions.ts's
+// identical comment for why (requireSupabaseAuth needs a real request).
+export async function createBatchWithExtractionsCore(data: z.infer<typeof inputSchema>, context: ServerContext) {
     const { supabaseAdmin } = await import("@/integrations/supabase/ext-client.server");
     const userId = context.userId;
 
@@ -114,4 +118,9 @@ export const createBatchWithExtractions = createServerFn({ method: "POST" })
       extractions,
       uploadTokens,
     };
-  });
+}
+
+export const createBatchWithExtractions = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((data) => inputSchema.parse(data))
+  .handler(({ data, context }) => createBatchWithExtractionsCore(data, context));

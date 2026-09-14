@@ -1,14 +1,20 @@
 // Server functions that queue extraction jobs onto Inngest via the connector
 // gateway. All keys are server-only; the browser never sees them.
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/ext-auth-middleware";
 import { inngest } from "@/lib/inngest.server";
 import { requireActiveWorkspaceId } from "./workspace-helpers";
+import type { Database } from "@/integrations/supabase/types";
 
-export const queueExtractions = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((input: { extraction_ids: string[] }) => input)
-  .handler(async ({ data, context }) => {
+type ServerContext = { supabase: SupabaseClient<Database>; userId: string };
+
+// Handler logic pulled out of createServerFn(...).handler() so it's callable
+// directly from Vitest without a real HTTP request: requireSupabaseAuth
+// (the middleware every createServerFn export here uses) calls getRequest(),
+// which only resolves inside one. createServerFn(...).handler() below is now
+// a one-line call-through to this — same behavior, just testable.
+export async function queueExtractionsCore(data: { extraction_ids: string[] }, context: ServerContext) {
     const nowIso = () => new Date().toISOString();
     const isStaleProcessing = (updatedAt: unknown) => {
       const updatedAtMs = Date.parse(String(updatedAt ?? ""));
@@ -122,12 +128,14 @@ export const queueExtractions = createServerFn({ method: "POST" })
     }
 
     return { queued, failed_to_queue: 0 };
-  });
+}
 
-export const processExtractionNow = createServerFn({ method: "POST" })
+export const queueExtractions = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input: { extraction_id: string }) => input)
-  .handler(async ({ data, context }) => {
+  .inputValidator((input: { extraction_ids: string[] }) => input)
+  .handler(({ data, context }) => queueExtractionsCore(data, context));
+
+export async function processExtractionNowCore(data: { extraction_id: string }, context: ServerContext) {
     const nowIso = () => new Date().toISOString();
 
     const extractionId = String(data.extraction_id ?? "").trim();
@@ -166,7 +174,12 @@ export const processExtractionNow = createServerFn({ method: "POST" })
     }
 
     return result;
-  });
+}
+
+export const processExtractionNow = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: { extraction_id: string }) => input)
+  .handler(({ data, context }) => processExtractionNowCore(data, context));
 
 /**
  * Republishes updated_at on a batch's still-queued rows.
@@ -178,10 +191,7 @@ export const processExtractionNow = createServerFn({ method: "POST" })
  * long as it is actually driving the batch; RLS scopes it to the caller's own
  * rows.
  */
-export const keepBatchRowsFresh = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((input: { batch_id: string }) => input)
-  .handler(async ({ data, context }) => {
+export async function keepBatchRowsFreshCore(data: { batch_id: string }, context: ServerContext) {
     if (!data.batch_id) return { refreshed: 0 };
 
     const wsId = await requireActiveWorkspaceId(context.supabase, context.userId);
@@ -195,4 +205,9 @@ export const keepBatchRowsFresh = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
 
     return { refreshed: rows?.length ?? 0 };
-  });
+}
+
+export const keepBatchRowsFresh = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: { batch_id: string }) => input)
+  .handler(({ data, context }) => keepBatchRowsFreshCore(data, context));
