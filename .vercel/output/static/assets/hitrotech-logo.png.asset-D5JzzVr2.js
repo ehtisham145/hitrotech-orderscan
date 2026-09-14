@@ -1,0 +1,1 @@
+var e={version:1,asset_id:`c389439d-ab55-43e4-9b36-3a8d299498f3`,project_id:`9d09e890-b92a-49f8-be93-3f8643dab839`,url:`/hitrotech-logo.png`,r2_key:`a/v1/9d09e890-b92a-49f8-be93-3f8643dab839/c389439d-ab55-43e4-9b36-3a8d299498f3/hitrotech-logo.png`,original_filename:`hitrotech-logo.png`,size:122043,content_type:`image/png`,created_at:`2026-07-08T21:21:11Z`};export{e as t};

@@ -1,0 +1,10 @@
+User-agent: *
+Allow: /
+Disallow: /dashboard
+Disallow: /batches
+Disallow: /reports
+Disallow: /search
+Disallow: /admin
+Disallow: /api/
+
+Sitemap: https://hello-world-maker-9385.lovable.app/sitemap.xml

@@ -1,0 +1,1 @@
+import{a as e,r as t,t as n}from"./ext-auth-middleware-CX26ybK_.js";var r=t({method:`GET`}).middleware([n]).handler(e(`040dbc12113db1548795ecc00b3313eefbe407555accb55cc6dce5dc5547f046`)),i=t({method:`GET`}).middleware([n]).handler(e(`5232417f421d6d549a8ea3df61984444723cad95a3bf9a7b4f0ca8ac7f7befd2`));export{i as n,r as t};
