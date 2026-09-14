@@ -4,6 +4,7 @@ import hmac
 import logging
 import os
 import time
+from contextlib import asynccontextmanager
 from typing import Any
 
 import numpy as np
@@ -30,8 +31,6 @@ OCR_LANG = os.environ.get("OCR_LANG", "en")
 # startup so the first real request never pays the ~15-25s model-init cost —
 # that lazy first-hit is what caused intermittent 503s under Cloud Run.
 EAGER_LOAD = os.environ.get("OCR_EAGER_LOAD", "true").lower() not in ("0", "false", "no")
-
-app = FastAPI(title="OrderScan OCR", version="1.0.0")
 
 _engine: Any = None
 
@@ -88,10 +87,18 @@ def get_engine() -> Any:
     return _engine
 
 
-@app.on_event("startup")
-def _warm_engine_on_startup() -> None:
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    # Replaces the deprecated @app.on_event("startup") — functionally
+    # identical (still just calls get_engine() once, eagerly, before the
+    # first request), TestClient's `with TestClient(app) as c:` triggers
+    # this the same way it triggered on_event.
     if EAGER_LOAD:
         get_engine()
+    yield
+
+
+app = FastAPI(title="OrderScan OCR", version="1.0.0", lifespan=lifespan)
 
 
 def require_api_key(x_api_key: str = Header(default="")) -> None:
@@ -185,11 +192,11 @@ async def _run_ocr(image_bytes: bytes) -> OcrResponse:
             )
 
     # Reading order: top-to-bottom, then left-to-right within a ~12px band.
-    lines.sort(key=lambda l: (round(min(p[1] for p in l.box) / 12), min(p[0] for p in l.box)))
+    lines.sort(key=lambda ln: (round(min(p[1] for p in ln.box) / 12), min(p[0] for p in ln.box)))
 
-    avg = round(sum(l.confidence for l in lines) / len(lines), 4) if lines else 0.0
+    avg = round(sum(ln.confidence for ln in lines) / len(lines), 4) if lines else 0.0
     return OcrResponse(
-        text="\n".join(l.text for l in lines),
+        text="\n".join(ln.text for ln in lines),
         lines=lines,
         confidence=avg,
         ms=int((time.perf_counter() - started) * 1000),

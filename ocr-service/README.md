@@ -46,6 +46,37 @@ docker compose -f docker-compose.dev.yml up --build
 Code under `app/` is bind-mounted, so `--reload` picks up changes without a
 rebuild. Service listens on `http://localhost:${OCR_PORT:-8000}`.
 
+## Testing
+
+`tests/` never imports `paddleocr`/`paddlepaddle` — `get_engine()`'s import
+of `PaddleOCR` is inside the function body, and every test that exercises
+`/ocr/*` replaces `get_engine()` itself via `monkeypatch`, so a plain venv
+with just the non-paddle packages from `requirements/dev.txt` is enough:
+
+```bash
+python -m venv .venv-test
+.venv-test/Scripts/activate   # .venv-test/bin/activate on Linux/macOS
+pip install fastapi==0.115.6 python-multipart==0.0.20 pydantic==2.10.4 \
+  opencv-python-headless==4.10.0.84 pillow==11.0.0 numpy==1.26.4 \
+  requests==2.32.3 pytest==8.3.4 pytest-asyncio==0.25.2 httpx==0.28.1
+pytest -v
+```
+
+Runs in ~2s. For an authoritative check against the real dependency set
+(actual paddle packages installed, matching what ships to production), run
+it inside the deployed container instead — the prod image doesn't bake
+`tests/` in on purpose, so copy it in for a one-off check:
+
+```bash
+docker cp ocr-service/tests orderscan-ocr:/app/tests
+docker cp ocr-service/pytest.ini orderscan-ocr:/app/pytest.ini
+docker exec orderscan-ocr pip install pytest==8.3.4 pytest-asyncio==0.25.2 httpx==0.28.1
+docker exec -w /app orderscan-ocr python -m pytest -q
+```
+
+Also configured (in `requirements/dev.txt`) but not yet wired into any
+automated pipeline: `ruff` for linting (`ruff check app/ tests/`).
+
 ## VPS deployment (Docker Compose + ops/)
 
 One-time setup on the VPS:
