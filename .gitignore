@@ -35,6 +35,7 @@ ocr-service/backups/
 __pycache__/
 *.pyc
 .venv/
+.venv-test/
 venv/
 .pytest_cache/
 .ruff_cache/
