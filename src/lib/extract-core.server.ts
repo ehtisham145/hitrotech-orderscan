@@ -14,6 +14,7 @@ import { SYSTEM_PROMPT, ExtractionSchema } from "@/lib/extraction/prompt";
 import { readWithOcr } from "@/lib/extraction/ocr-read.server";
 import { syncBatchCounts } from "@/lib/extraction/batch-sync.server";
 import { nowIso } from "@/lib/extraction/time";
+import { retryOnDeadlock } from "@/lib/extraction/db-retry.server";
 
 type SB = SupabaseClient<Database>;
 
@@ -98,29 +99,19 @@ async function runExtractionUnguarded(supabase: SB, extractionId: string): Promi
   // back to back. The caller-side code already expects an "already_processing"
   // result and treats it as a harmless no-op (see queue.functions.ts and
   // batches.$id.tsx) — this was the missing half of that contract.
-  // Deadlocks between two concurrent single-row claim UPDATEs are a normal,
-  // expected occurrence under bulk load (Postgres error 40P01) — the standard
-  // response is simply to retry, since the losing transaction is rolled back
-  // with no partial effect. Without this, a deadlocked claim surfaced as
-  // "claim_failed", which the caller does not treat as retryable (unlike
-  // "already_processing"), leaving a perfectly good "pending" row stuck for
-  // the rest of the page's life.
-  let claimed: { id: string }[] | null = null;
-  let claimErr: { message: string; code?: string } | null = null;
-  for (let attempt = 0; attempt < 3; attempt++) {
-    const res = await supabase
-      .from("extractions")
-      .update({ status: "processing", error_message: "Reading screenshot...", updated_at: nowIso() })
-      .eq("id", extractionId)
-      .in("status", ["pending", "failed"])
-      .select("id");
-    claimed = res.data;
-    claimErr = res.error;
-    const isDeadlock = claimErr?.code === "40P01" || /deadlock detected/i.test(claimErr?.message ?? "");
-    if (!isDeadlock) break;
-    console.warn(`[extract-core] Claim deadlocked for ${extractionId}, retrying (attempt ${attempt + 1}/3)`);
-    await new Promise((r) => setTimeout(r, 50 + Math.random() * 150));
-  }
+  // A deadlocked claim, if not retried, surfaced as "claim_failed", which the
+  // caller does not treat as retryable (unlike "already_processing"), leaving
+  // a perfectly good "pending" row stuck for the rest of the page's life.
+  const { data: claimed, error: claimErr } = await retryOnDeadlock(
+    () =>
+      supabase
+        .from("extractions")
+        .update({ status: "processing", error_message: "Reading screenshot...", updated_at: nowIso() })
+        .eq("id", extractionId)
+        .in("status", ["pending", "failed"])
+        .select("id"),
+    `Claim for ${extractionId}`,
+  );
 
   if (claimErr) {
     console.error("[extract-core] Could not claim extraction:", claimErr.message);
@@ -418,11 +409,10 @@ async function finalizeExtraction(
     }
   }
 
-  let { data: writtenRows, error: writeErr } = await supabase
-    .from("extractions")
-    .update(update as any)
-    .eq("id", extraction.id)
-    .select("id");
+  let { data: writtenRows, error: writeErr } = await retryOnDeadlock(
+    () => supabase.from("extractions").update(update as any).eq("id", extraction.id).select("id"),
+    `Save result for ${extraction.id}`,
+  );
 
   // A column the deployment's schema does not have yet (e.g. alternative_contact
   // before its migration ran) rejects the whole update. Drop it and retry once
@@ -433,11 +423,10 @@ async function finalizeExtraction(
     if (col && col in update) {
       console.warn(`[extract-core] Column "${col}" missing in schema — retrying without it.`);
       delete update[col];
-      const retry = await supabase
-        .from("extractions")
-        .update(update as any)
-        .eq("id", extraction.id)
-        .select("id");
+      const retry = await retryOnDeadlock(
+        () => supabase.from("extractions").update(update as any).eq("id", extraction.id).select("id"),
+        `Save result for ${extraction.id} (retry without missing column)`,
+      );
       writtenRows = retry.data;
       writeErr = retry.error;
     }

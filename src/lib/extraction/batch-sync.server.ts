@@ -9,6 +9,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/integrations/supabase/types";
 import { nowIso } from "./time";
+import { retryOnDeadlock } from "./db-retry.server";
 
 type SB = SupabaseClient<Database>;
 
@@ -47,16 +48,24 @@ export async function syncBatchCounts(supabase: SB, batchId: string) {
     .eq("id", batchId)
     .maybeSingle();
 
-  await supabase
-    .from("batches")
-    .update({
-      processed_count: processed,
-      failed_count: failed,
-      duplicate_count: dups,
-      status: nextStatus,
-      updated_at: nowIso(),
-    })
-    .eq("id", batchId);
+  // Every extraction in the same batch races to update this one batches row
+  // as it finishes — confirmed as a real deadlock source under an 18-image
+  // bulk test (Postgres 40P01), same class of issue as the row-claim step.
+  await retryOnDeadlock(
+    () =>
+      supabase
+        .from("batches")
+        .update({
+          processed_count: processed,
+          failed_count: failed,
+          duplicate_count: dups,
+          status: nextStatus,
+          updated_at: nowIso(),
+        })
+        .eq("id", batchId)
+        .select("id"),
+    `syncBatchCounts write for batch ${batchId}`,
+  );
 
   if (
     nextStatus === "completed" &&
