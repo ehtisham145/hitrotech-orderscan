@@ -425,7 +425,16 @@ function BatchDetail() {
     // Extra workers beyond however much work actually exists just no-op via
     // claimNext() returning null immediately, so it's safe to always spin up
     // the full count rather than sizing it to a (now nonexistent) static list.
-    const MAX_PARALLEL_WORKERS = 4;
+    // Two, not four. Four was already more than the OCR service can serve at
+    // once, but the binding constraint turned out to be the database, not OCR:
+    // a live 25-image batch deadlocked at the claim step, the save step and the
+    // shared batches-row update simultaneously (Postgres 40P01), leaving rows
+    // stuck in `processing` and bouncing back to `pending`. Every worker is an
+    // independent writer against the same batch's rows, and the contention
+    // scales with this number while throughput does not — the work is bounded
+    // by OCR either way. Retries (extraction/db-retry.server.ts) absorb what is
+    // left; this is what stops generating it.
+    const MAX_PARALLEL_WORKERS = 2;
     const runWave = () => Promise.all(Array.from({ length: MAX_PARALLEL_WORKERS }, () => worker()));
 
     void (async () => {

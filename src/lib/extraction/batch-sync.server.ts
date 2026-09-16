@@ -44,28 +44,44 @@ export async function syncBatchCounts(supabase: SB, batchId: string) {
 
   const { data: priorBatch } = await supabase
     .from("batches")
-    .select("status, workspace_id, name")
+    .select("status, workspace_id, name, processed_count, failed_count, duplicate_count")
     .eq("id", batchId)
     .maybeSingle();
 
-  // Every extraction in the same batch races to update this one batches row
-  // as it finishes — confirmed as a real deadlock source under an 18-image
-  // bulk test (Postgres 40P01), same class of issue as the row-claim step.
-  await retryOnDeadlock(
-    () =>
-      supabase
-        .from("batches")
-        .update({
-          processed_count: processed,
-          failed_count: failed,
-          duplicate_count: dups,
-          status: nextStatus,
-          updated_at: nowIso(),
-        })
-        .eq("id", batchId)
-        .select("id"),
-    `syncBatchCounts write for batch ${batchId}`,
-  );
+  // Every extraction in the same batch races to update this one batches row as
+  // it finishes — a confirmed deadlock source under bulk load (Postgres 40P01),
+  // same class of issue as the row-claim step.
+  //
+  // Most of those writes change nothing. This function recomputes from a fresh
+  // SELECT, so several workers finishing within the same moment all read the
+  // same totals and then queue identical UPDATEs against one row. Skipping the
+  // write when nothing actually moved removes that contention at the source
+  // rather than retrying through it — and the row still converges, because
+  // whichever worker *does* see a changed total is the one that writes.
+  const unchanged =
+    priorBatch != null &&
+    (priorBatch as any).processed_count === processed &&
+    (priorBatch as any).failed_count === failed &&
+    (priorBatch as any).duplicate_count === dups &&
+    priorBatch.status === nextStatus;
+
+  if (!unchanged) {
+    await retryOnDeadlock(
+      () =>
+        supabase
+          .from("batches")
+          .update({
+            processed_count: processed,
+            failed_count: failed,
+            duplicate_count: dups,
+            status: nextStatus,
+            updated_at: nowIso(),
+          })
+          .eq("id", batchId)
+          .select("id"),
+      `syncBatchCounts write for batch ${batchId}`,
+    );
+  }
 
   if (
     nextStatus === "completed" &&

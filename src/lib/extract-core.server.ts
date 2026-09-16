@@ -14,7 +14,7 @@ import { SYSTEM_PROMPT, ExtractionSchema } from "@/lib/extraction/prompt";
 import { readWithOcr } from "@/lib/extraction/ocr-read.server";
 import { syncBatchCounts } from "@/lib/extraction/batch-sync.server";
 import { nowIso } from "@/lib/extraction/time";
-import { retryOnDeadlock } from "@/lib/extraction/db-retry.server";
+import { retryOnDeadlock, markExtractionFailed } from "@/lib/extraction/db-retry.server";
 
 type SB = SupabaseClient<Database>;
 
@@ -151,11 +151,7 @@ async function runExtractionUnguarded(supabase: SB, extractionId: string): Promi
     imageDataUrl = `data:${mimeType};base64,${bytes.toString("base64")}`;
   } catch (err: any) {
     console.error("[extract-core] Could not read screenshot:", err.message, "| cause:", err.cause);
-    await supabase.from("extractions").update({
-      status: "failed",
-      error_message: `Could not read screenshot: ${err.message}`.slice(0, 500),
-      updated_at: nowIso(),
-    }).eq("id", extraction.id);
+    await markExtractionFailed(supabase as any, extraction.id, `Could not read screenshot: ${err.message}`, nowIso);
     await syncBatchCounts(supabase, extraction.batch_id);
     return { ok: false, error: "image_unavailable" };
   }
@@ -330,11 +326,7 @@ ${ocrText}
     parsed = ExtractionSchema.parse(JSON.parse(content));
   } catch (e: any) {
     console.error(`[extract-core] Invalid AI response via ${provider}:`, String(content).slice(0, 300));
-    await supabase.from("extractions").update({
-      status: "failed",
-      error_message: `Invalid AI response schema: ${String(e?.message ?? "parse error")}`.slice(0, 500),
-      updated_at: nowIso(),
-    }).eq("id", extraction.id);
+    await markExtractionFailed(supabase as any, extraction.id, `Invalid AI response schema: ${String(e?.message ?? "parse error")}`, nowIso);
     await syncBatchCounts(supabase, extraction.batch_id);
     return { ok: false, error: "validation_failed" };
   }
@@ -497,10 +489,7 @@ async function finalizeExtraction(
   if (writeErr || !writtenRows?.length) {
     const reason = writeErr?.message ?? "no rows matched";
     console.error("[extract-core] Could not save extracted fields:", reason);
-    await supabase
-      .from("extractions")
-      .update({ status: "failed", error_message: `Could not save result: ${reason}`.slice(0, 500), updated_at: nowIso() })
-      .eq("id", extraction.id);
+    await markExtractionFailed(supabase as any, extraction.id, `Could not save result: ${reason}`, nowIso);
     await syncBatchCounts(supabase, extraction.batch_id);
     return { ok: false, error: "save_failed" };
   }

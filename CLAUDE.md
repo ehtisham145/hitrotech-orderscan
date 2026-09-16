@@ -350,6 +350,64 @@ on the screenshots, not captured OCR output.** They prove the parser handles the
 layout and the known mangling; they do not prove PaddleOCR emits those exact
 lines on the VPS.
 
+### 2.9 Bulk batches deadlock on the database, not on OCR
+
+A live 25-image batch produced 18 successes, 2 rows wedged in `processing` and
+5 bouncing in `pending`, with the log full of:
+
+```
+[extract-core] Save result for <id> deadlocked, retrying (attempt 3/3)
+[extract-core] Could not save extracted fields: deadlock detected
+[extract-core] Could not claim extraction: deadlock detected
+[extract-core] Could not claim extraction: canceling statement due to statement timeout
+```
+
+OCR and the AI were fine — every row had already been read. **The writes lost.**
+
+**Why it happens.** One open batch page is many independent writers against the
+same handful of rows at once: N direct-processing workers doing per-row claims
+and saves, the auto-queue effect re-running `queueExtractions` (a multi-row
+`UPDATE ... WHERE id IN (...)`) every 5s, `keepBatchRowsFresh` doing another
+multi-row update every 30s, a 30s heartbeat per in-flight row, and
+`syncBatchCounts` after *every* row — which re-SELECTs the whole batch and then
+updates the one shared `batches` row.
+
+**Why rows got stuck rather than just slow.** Three compounding reasons, all now
+fixed:
+
+1. Retries were 3 attempts at flat 50-200ms — about 375ms of runway against
+   contention lasting far longer, and every contender retried on the same
+   schedule so they re-collided. Now 5 attempts, exponential with jitter, ≈3s.
+2. Statement timeouts (57014) were not treated as retryable, though under this
+   contention a statement times out *because* it waited on someone else's lock.
+   Now retried on the same path.
+3. **The failure paths themselves were unchecked bare updates.** When
+   "mark this row failed" lost a deadlock — most likely exactly then, since it
+   runs right after a write that already deadlocked — the row was left in
+   `processing` with no error and no owner. That is the two wedged rows. All
+   three now go through `markExtractionFailed`, which retries and shouts if it
+   still cannot record the failure.
+
+**And two changes that stop generating the contention:**
+
+- `MAX_PARALLEL_WORKERS` 4 → **2** (`batches.$id.tsx`). Throughput is bounded by
+  OCR either way; the worker count only scaled the write contention.
+- `syncBatchCounts` now skips the `batches` UPDATE when the counts and status
+  are unchanged. Several workers finishing in the same moment all recompute the
+  same totals and used to queue identical writes against one row.
+
+**Still open, if this recurs:** `syncBatchCounts` runs once per extraction and
+each run costs a full SELECT of the batch plus a possible shared-row write.
+Coalescing it (one sync per batch per second, trailing edge) is the next lever
+and has not been done. Also note `queue.functions.ts` keeps its own second copy
+of the count logic (§ the file's own comment) — they contend with each other.
+
+**Reading the logs.** `docker logs orderscan-app | grep -c "OCR read"` counts
+*more* than the batch size when rows are re-driven; that is the symptom, not a
+miscount. Note `docker logs` sends container stderr straight to the terminal,
+bypassing a pipe — warnings and errors will appear around a `grep -c` result
+rather than being counted by it.
+
 ---
 
 ## 3. OCR service — measured behaviour
@@ -367,7 +425,9 @@ lines), `paddleocr 2.9.1` + `paddlepaddle 3.0.0`:
 When the worker is killed mid-request the app sees `SocketError: other side
 closed` with `bytesRead: 0`.
 
-**The "6 GB container limit" in these notes does not match the repo.**
+**Confirmed on the VPS: the container limit is 6 GB**, so the server's
+`ocr-service/.env` sets `OCR_MEMORY_LIMIT=6g`. Do not read the repo default as
+the live value — they differ:
 `ocr-service/docker-compose.prod.yml:16` sets `mem_limit: ${OCR_MEMORY_LIMIT:-4g}`
 with `memswap_limit: ${OCR_MEMORY_SWAP_LIMIT:-8g}` (`:22`), and
 `ocr-service/.env.example` also carries `OCR_MEMORY_LIMIT=4g`. Whichever value
