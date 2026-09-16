@@ -164,7 +164,11 @@ export async function processExtractionNowCore(data: { extraction_id: string }, 
     // the atomic claim in extract-core.server and is actively working the row
     // right now — resetting it to "pending" here would rip it out from under
     // that in-flight worker instead of just being this caller's own no-op.
-    if (!result.ok && /AI not configured|AI rate limit|retrying|capacity|claim_failed|proxy_/i.test(String(result.error))) {
+    // save_failed added after a real bulk test left 5 rows permanently
+    // "failed" on a DB deadlock/statement-timeout at the save step — the
+    // extraction itself had already succeeded, only the write lost the race,
+    // so it's exactly as retryable as claim_failed already next to it.
+    if (!result.ok && /AI not configured|AI rate limit|retrying|capacity|claim_failed|save_failed|proxy_/i.test(String(result.error))) {
       await context.supabase
         .from("extractions")
         .update({ status: "pending", error_message: `${result.error} — retrying automatically`, updated_at: nowIso() })
