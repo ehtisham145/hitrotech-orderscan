@@ -195,6 +195,40 @@ describe("tryTemplateExtraction", () => {
       });
     });
 
+    // Both confirmed from production. PaddleOCR emits one line per detected
+    // text box, so whether the "13 Sept 2026 | 01:44 PM" row arrives as one
+    // line or two depends on how wide a gap the "|" glyph opened in that
+    // particular render. Handling only the glued form is what sent five rows
+    // of a live 25-image batch to the AI.
+    it("reads a timestamp split across two lines by the '|' separator", () => {
+      const split = REAL_SAMPLE.replace("08 Aug202611:50 AM", ["09 Sept 2026", "04:28 PM"].join("\n"));
+      const result = tryTemplateExtraction(split, 0.97);
+      expect(result).not.toBeNull();
+      expect(result!.data).toMatchObject({
+        activation_date: "09 Sept 2026",
+        activation_time: "04:28 PM",
+      });
+    });
+
+    it("reads a split timestamp whose '|' survived on one side or the other", () => {
+      const trailingPipe = REAL_SAMPLE.replace("08 Aug202611:50 AM", ["09 Sept 2026 |", "04:28 PM"].join("\n"));
+      expect(tryTemplateExtraction(trailingPipe, 0.97)!.data).toMatchObject({
+        activation_date: "09 Sept 2026",
+        activation_time: "04:28 PM",
+      });
+
+      const leadingPipe = REAL_SAMPLE.replace("08 Aug202611:50 AM", ["09 Sept 2026", "| 04:28 PM"].join("\n"));
+      expect(tryTemplateExtraction(leadingPipe, 0.97)!.data).toMatchObject({
+        activation_date: "09 Sept 2026",
+        activation_time: "04:28 PM",
+      });
+    });
+
+    it("refuses when the date line came through but the time box was dropped", () => {
+      const dateOnly = REAL_SAMPLE.replace("08 Aug202611:50 AM", "09 Sept 2026");
+      expect(tryTemplateExtraction(dateOnly, 0.97)).toBeNull();
+    });
+
     it("still matches the label when the pencil glyph is read as a stray character", () => {
       const withGlyphs = REAL_SAMPLE.replace("CNIC number", "CNIC number 2") + "\nAlternate Contact /\n03-001209900";
       const result = tryTemplateExtraction(withGlyphs, 0.97);

@@ -108,16 +108,33 @@ const NOISE_PATTERNS: RegExp[] = [
   /^[^A-Za-z0-9]{1,3}$/,
 ];
 
-// The timestamp label's value splits into two fields. The separator is
-// unreliable: the rendered page shows "13 Sept 2026 | 01:44 PM", but PaddleOCR
-// merges the thin "|" glyph into whitespace it then drops, giving
-// "13 Sept 202601:44 PM". This pattern therefore treats the pipe and every
-// space as optional rather than splitting on a delimiter.
+// The timestamp label's value splits into two fields, and the "|" separator
+// behaves in two different ways depending on the render — BOTH confirmed from
+// production rows:
+//
+//   one line   "13 Sept 202601:44 PM"   PaddleOCR detected the whole timestamp
+//                                       as a single text box and dropped the
+//                                       thin "|" glyph along with the spacing.
+//   two lines  "09 Sept 2026"           The "|" opened a wide enough gap that
+//              "04:28 PM"               the detector split it into two boxes,
+//                                       and main.py emits one line per box.
+//
+// Handling only the first shape is what sent five rows of a live 25-image
+// batch to the AI: their timestamps came through split, the parser saw a
+// date-only line that matched nothing, and the whole row was refused for
+// missing activation_date/activation_time. Groq then charged nothing but also
+// returned null for both, which is how the split was spotted at all.
 //
 // The month is 3-9 letters, NOT 3: this page writes "Sept".
 const ORDER_PLACED_PATTERN = /^order\s*placed\s*on$/i;
 const ORDER_PLACED_VALUE_PATTERN =
   /^(\d{1,2})\s*([A-Za-z]{3,9})\.?\s*(\d{4})\s*\|?\s*(\d{1,2}:\d{2})\s*([AP]\.?M\.?)$/i;
+const DATE_ONLY_PATTERN = /^(\d{1,2})\s*([A-Za-z]{3,9})\.?\s*(\d{4})\s*\|?$/i;
+const TIME_ONLY_PATTERN = /^\|?\s*(\d{1,2}:\d{2})\s*([AP]\.?M\.?)$/i;
+
+function normaliseTime(hhmm: string, meridiem: string): string {
+  return `${hhmm} ${meridiem.toUpperCase().replace(/\./g, "")}`;
+}
 
 const DEFAULT_MIN_CONFIDENCE = 90;
 
@@ -193,10 +210,20 @@ export function tryTemplateExtraction(
     if (!isUsableValue(value)) continue;
 
     if (ORDER_PLACED_PATTERN.test(label)) {
-      const m = ORDER_PLACED_VALUE_PATTERN.exec(value);
-      if (m) {
-        assign("activation_date", `${m[1]} ${m[2]} ${m[3]}`, i + 1);
-        assign("activation_time", `${m[4]} ${m[5].toUpperCase().replace(/\./g, "")}`, i + 1);
+      const whole = ORDER_PLACED_VALUE_PATTERN.exec(value);
+      if (whole) {
+        assign("activation_date", `${whole[1]} ${whole[2]} ${whole[3]}`, i + 1);
+        assign("activation_time", normaliseTime(whole[4], whole[5]), i + 1);
+        continue;
+      }
+
+      // Split across two boxes: the date line, then the time on the next one.
+      const dateOnly = DATE_ONLY_PATTERN.exec(value);
+      if (dateOnly) {
+        assign("activation_date", `${dateOnly[1]} ${dateOnly[2]} ${dateOnly[3]}`, i + 1);
+        const next = rows[i + 2]?.text;
+        const timeOnly = next ? TIME_ONLY_PATTERN.exec(next) : null;
+        if (timeOnly) assign("activation_time", normaliseTime(timeOnly[1], timeOnly[2]), i + 2);
       }
       continue;
     }
@@ -226,7 +253,21 @@ export function tryTemplateExtraction(
     const v = data[f];
     return typeof v !== "string" || v.length === 0;
   });
-  if (missing.length > 0) return null;
+  if (missing.length > 0) {
+    // A near miss is the interesting case and used to be completely silent:
+    // the row simply went to the AI with nothing said about why. Finding out
+    // that five rows were refused over a split timestamp took a database
+    // query against already-saved rows, which only worked because the AI
+    // happened to leave the same fields null. Log it when the page looks like
+    // this layout at all (an order code was found), and stay quiet otherwise
+    // so unrelated documents don't spam the log.
+    if (data.order_number) {
+      console.log(
+        `[template] refused ${data.order_number} — missing: ${missing.join(", ")}`,
+      );
+    }
+    return null;
+  }
 
   const confidence: Record<string, number> = {};
   for (const key of Object.keys(data) as ExtractField[]) {

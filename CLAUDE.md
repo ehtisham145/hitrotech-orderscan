@@ -323,7 +323,26 @@ chrome (a status bar, an FAQ heading) dragged the page average under
   carrying it pays a rejected UPDATE plus the retry at
   `extract-core.server.ts:427`.
 
-**Is CNIC really required? — unsettled, and it matters.** `REQUIRED_FIELDS`
+**The "|" in the timestamp splits into two OCR lines, sometimes.** The page
+renders `13 Sept 2026 | 01:44 PM`. PaddleOCR emits one line per detected text
+box, so depending on how wide a gap that glyph opens, the row arrives either
+glued (`08 Aug202611:50 AM`) or as two separate lines (`09 Sept 2026` then
+`04:28 PM`). Both are confirmed from production rows. Handling only the glued
+form refused five rows of a live 25-image batch for "missing
+activation_date/activation_time" — they went to Groq, which cost nothing but
+also returned null for both fields, which is how the split was spotted at all.
+The parser now reads both shapes.
+
+**A refusal now says why.** `[template] refused <order_number> — missing: ...`
+is logged whenever the parser recognised the layout (it found an order code)
+but bailed on a required field. Before this a near miss was completely silent,
+and working out *which* field was missing meant querying already-saved rows and
+hoping the AI had left the same ones null.
+
+**Is CNIC really required? — mostly settled.** A live 25-image batch put 6 of 7
+non-template rows through the AI with a CNIC present, so the CNIC requirement
+was not what refused them (the timestamp was). Keep it required. The original
+concern: `REQUIRED_FIELDS`
 includes `cnic` because all 35 reviewed screenshots carry it, and a SIM
 registration row without one is not worth saving. But the `REAL_SAMPLE` fixture
 that arrived with the test suite — commented "confirmed against a live upload"
@@ -351,6 +370,11 @@ layout and the known mangling; they do not prove PaddleOCR emits those exact
 lines on the VPS.
 
 ### 2.9 Bulk batches deadlock on the database, not on OCR
+
+*Result after the fixes below: a 25-image batch went 18/25 with 7 rows wedged →
+**25/25, zero failures**, 6 write conflicts all absorbed by retry. Source split
+`{ template: 19, groq: 5, gemini: 1 }` — 24 of 25 rows cost nothing.*
+
 
 A live 25-image batch produced 18 successes, 2 rows wedged in `processing` and
 5 bouncing in `pending`, with the log full of:
