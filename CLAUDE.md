@@ -12,21 +12,40 @@ measured so they don't get re-derived.
 ## 1. Shape of the system
 
 ```
-browser ──upload──> Supabase Storage (bucket: screenshots)
-   │                     │
-   │                     └─ row in `extractions`, status = pending
+[browser] user picks files
+   │  import-processing.ts expands them BEFORE anything is uploaded:
+   │  ZIP → members, PDF → one PNG per page, HEIC → JPG, then every
+   │  image is canvas-resized to ≤1200×1600 JPEG q0.8
    │
-   └──"process this row"──> app server (VPS)
+   ├──upload──> Supabase Storage (bucket: screenshots)
+   │            one `extractions` row per file, status = pending
+   │
+   └──"process this row"──> app server (VPS)   ← driven by 4 browser workers
                                  │
+                                 ├─ claim row  (pending|failed → processing)
                                  ├─ download screenshot
                                  ├─ OCR service ──> text        (primary)
-                                 │     └─ unavailable? send the image instead
-                                 ├─ Gemini ──> structured JSON
-                                 └─ write fields to `extractions`, status = success
+                                 │     └─ busy/down? text is null, never a failure
+                                 │
+                                 ├─ template-extract.ts ─ match? ─> skip the AI
+                                 │     (DISABLED by default — shadow-logs only)
+                                 │
+                                 ├─ have text? ─yes─> Groq (free, text-only)
+                                 │                      └─fail─> Gemini ─> gateway
+                                 └─ have text? ─no──> Gemini VISION (whole image)
+                                       │
+                                       └─ finalize: normalize → batch defaults →
+                                          needs_review → duplicate check →
+                                          write `extractions`, status = success
 ```
 
 **Stack**: TanStack Start (React + Nitro — one app, frontend and API routes in the
-same route tree), Supabase, Gemini, FastAPI + PaddleOCR in `ocr-service/`.
+same route tree), Supabase, Groq + Gemini, FastAPI + PaddleOCR in `ocr-service/`.
+
+OCR does not extract fields — it only turns the image into text. Every field
+value comes from either the template parser or a model. OCR exists to make the
+model call cheap (text instead of an image, and text can go to Groq for free),
+not to make it more accurate. See §2.5.
 
 **Two Supabase projects, and this matters:**
 
@@ -43,13 +62,23 @@ client explicitly agreeing — other deployments of theirs read from it.
 
 | Path | What it is |
 |---|---|
-| `src/lib/extract-core.server.ts` | The whole extraction routine. Start here. |
+| `src/lib/extract-core.server.ts` | Orchestration: claim → read → template → AI → persist. Start here. |
+| `src/lib/extraction/ocr-read.server.ts` | The OCR call. Returns `null` on every failure, by design. |
+| `src/lib/extraction/prompt.ts` | System prompt + the zod schema the model must return |
+| `src/lib/extraction/batch-sync.server.ts` | Recomputes batch counts; fires the batch-completed notification |
+| `src/lib/template-extract.ts` | Free label-matching fast path for the client's own layout (§2.5, §2.8) |
+| `scripts/check-template.ts` | Offline parser check — `node scripts/check-template.ts`, no deps needed |
+| `src/lib/import-processing.ts` | **Browser-side** ZIP/PDF/HEIC expansion + resize, before upload |
+| `src/lib/batch-actions.functions.ts` | Creates the batch, the rows, and the signed upload URLs |
 | `src/lib/queue.functions.ts` | Server functions the batch page calls |
+| `src/lib/format.ts` | `EXTRACT_FIELDS`, `normalizePhone`, `normalizeCnic`, `avgConfidence` |
+| `src/routes/_authenticated/batches.new.tsx` | Upload page |
 | `src/routes/_authenticated/batches.$id.tsx` | Batch page; **drives processing from the browser** |
 | `src/lib/inngest.server.ts` | Background worker definitions + the stale-requeue cron |
 | `src/integrations/supabase/types.ts` | Generated schema types — the source of truth for column names |
 | `ocr-service/app/main.py` | OCR HTTP service |
 | `ocr-service/app/preprocess.py` | decode → resize → denoise → contrast → deskew |
+| `ocr-service/Dockerfile` | Prod CMD — note `--workers ${UVICORN_WORKERS:-2}` (§2.6) |
 | `ops/*.sh` | deploy, rollback, status, logs, health, backup, secrets-check |
 
 ---
@@ -83,9 +112,28 @@ repeated *successful* requests.
   number_type, package_name, activation_date_parsed, order_number_normalized,
   partner_id, commission_amount, commission_month, anomalies, workspace_id`
 
-`batches.$id.tsx` still reads `raw_ocr_text` for a "view OCR text" panel. That
-column doesn't exist either, so the panel never renders. Harmless, but it is dead
-code, not a feature.
+`batches.$id.tsx` still reads `raw_ocr_text` for a "view OCR text" panel
+(`batches.$id.tsx:880-921`). That column doesn't exist either, so the panel never
+renders. Harmless, but it is dead code, not a feature.
+
+**Two more mismatches between the field list and the schema, both live:**
+
+- **`alternative_contact` is not a column.** It is in `EXTRACT_FIELDS`
+  (`src/lib/format.ts:30`) and in the AI prompt's schema
+  (`src/lib/extraction/prompt.ts`), but it is absent from `extractions` in
+  `types.ts` — so `finalizeExtraction` writes it, PostgREST rejects the whole
+  update, and the "column missing → drop it and retry once" path
+  (`extract-core.server.ts:427-444`) rescues it. That path fires on **every
+  successful row**: one wasted round trip, then a second that works. It is
+  correct, not free. Fix by either adding the column (client's schema — ask
+  first) or removing the field from `EXTRACT_FIELDS` and the prompt.
+- **`order_number_normalized` is read but never written.** The duplicate check
+  filters on it (`extract-core.server.ts:411`) and nothing in this repo assigns
+  it. `types.ts` lists it in both `Insert` and `Update`, so it is an ordinary
+  writable column, not a generated one — meaning if no DB trigger populates it,
+  `is_duplicate` silently never fires. **Unverified.** Confirm before trusting
+  duplicate detection:
+  `select count(*) filter (where order_number_normalized is not null), count(*) from extractions;`
 
 ### 2.2 Another deployment writes to the same database
 
@@ -133,10 +181,154 @@ condition was removed. If this line disappears, expect the same crash on
 
 ### 2.4 Processing is driven from the browser
 
-The batch page claims and processes rows itself (`processExtractionNow`), up to
-12 at a time. Closing the tab stops the work. This is not a background queue on
-the VPS — Inngest keys are deliberately unset here, so this deployment never runs
-the cron.
+The batch page claims and processes rows itself (`processExtractionNow`),
+`MAX_PARALLEL_WORKERS = 4` at a time (`batches.$id.tsx:413` — these notes said 12
+for a while; the code has said 4 since the pool was resized to match OCR
+concurrency). Closing the tab stops the work. This is not a background queue on
+the VPS — Inngest keys are deliberately unset here, so `queueExtractions` always
+takes its `fallback: "direct"` branch (`queue.functions.ts:100`) and this
+deployment never runs the cron.
+
+The page runs **three** separate effects and they are easy to confuse:
+
+| Effect | What it does | Line |
+|---|---|---|
+| auto-queue | re-queues `pending` / stale-`processing` rows, 5s debounce | `batches.$id.tsx:261` |
+| heartbeat | `keepBatchRowsFresh` every 30s on still-`pending` rows | `batches.$id.tsx:290` |
+| direct-processing | the 4-worker pool that does the actual work | `batches.$id.tsx:334` |
+
+**One retry branch is uncapped.** `MAX_AUTO_RETRIES_PER_ROW = 3` gates only the
+`isForeignWorkerFailure` half of `isRedrivableFailure` (`batches.$id.tsx:72`).
+The `isRecoverableQueueFailure` half (`:71`) has no cap at all — just a 5s
+backoff via `directRetryAfter`. A row that keeps failing with one of those
+messages is re-driven every 5 seconds for as long as the tab stays open, and
+**every re-drive is a fresh AI call**. Not fixed.
+
+### 2.5 Four things can answer an extraction, not one
+
+These notes used to say "Gemini". The real chain, in order, all in
+`extract-core.server.ts`:
+
+| # | Path | Model | Runs when | Line |
+|---|---|---|---|---|
+| 1 | template | none (string matching) | OCR text, OCR confidence ≥ `TEMPLATE_MIN_CONFIDENCE` (90), all three core fields matched, **and** `TEMPLATE_EXTRACTION_ENABLED=true` | 178-192 |
+| 2 | Groq | `openai/gpt-oss-120b` | `ocrText` **and** `GROQ_API_KEY` both present. Free. | 243-254 |
+| 3 | Gemini direct | `gemini-3.6-flash` | Groq skipped or failed, `GEMINI_API_KEY` set | 272-285 |
+| 4 | Lovable gateway | `google/gemini-3.6-flash` | Gemini direct failed or threw, `LOVABLE_API_KEY` set | 220, 290, 307, 311 |
+
+Two consequences worth internalising:
+
+- **Groq is never sent an image.** It is gated on `ocrText` existing
+  (`extract-core.server.ts:243`) and no vision endpoint is used for it. So an
+  OCR failure costs twice: it loses the free path *and* forces the expensive
+  vision path. Anything that raises the OCR hit rate is an AI-spend lever, not
+  an accuracy lever.
+- **The template path is DISABLED.** `TEMPLATE_EXTRACTION_ENABLED` defaults to
+  `"false"` in the code (`extract-core.server.ts:182`) and in `.env.example`.
+  The parser still runs and logs
+  `[shadow] template would match for {id}: {...}`, then falls through to the AI
+  regardless. As shipped it saves nothing. See §2.8 for what it now handles and
+  what still has to be checked before enabling it.
+
+`LOVABLE_API_KEY` is read at `extract-core.server.ts:73` and checked by
+`ops/secrets-check.sh:24`, but **is not in `.env.example`** — so whether path 4
+exists at all depends on the server's `.env`. Check before assuming a fallback.
+
+`raw_response` records which path answered:
+`{ source, data, confidence, ocrUsed }` (`extract-core.server.ts:386`), where
+`source` is `template|groq|gemini|gateway`. That JSON is the only way to see the
+mix without reading logs — see §6.
+
+### 2.6 `OCR_MAX_CONCURRENCY=1` does not mean one inference per container
+
+`_inference_slot = asyncio.Semaphore(OCR_MAX_CONCURRENCY)` (`main.py:41`) lives
+inside **one Python process**, and the prod image starts
+`uvicorn --workers ${UVICORN_WORKERS:-2}` (`ocr-service/Dockerfile:69`;
+`ocr-service/.env.example` also sets `UVICORN_WORKERS=2`). So:
+
+```
+container inference slots = UVICORN_WORKERS × OCR_MAX_CONCURRENCY = 2 × 1 = 2
+```
+
+Each worker also eager-loads its own PaddleOCR engine at startup
+(`main.py:96`), so the model sits in memory twice.
+
+The comment at `main.py:38-40` and the `OCR_MAX_CONCURRENCY` note in
+`ocr-service/.env.example` both promise a one-at-a-time guarantee that only
+holds per process. Given §3's ~5.9 GB peak for a single dense page, two
+concurrent inferences do not fit inside any limit this project sets.
+**`UVICORN_WORKERS=1` is the cheapest way to make the semaphore mean what its
+own comment says** — halves resident memory and removes the second model copy.
+Not yet done, not yet measured.
+
+### 2.7 Two files with the same name collide on upload
+
+`batches.new.tsx:190` matches each file to its signed-upload token with
+`uploadTokens.find(t => t.fileName === f.name)`. Tokens are keyed by filename
+only, and `createBatchWithExtractions` issues one per file
+(`batch-actions.functions.ts:63-104`). Two files sharing a name — easy once a
+ZIP is flattened to basenames (`import-processing.ts:112`), or when two ZIPs
+each contain `1.jpg` — both resolve to the **first** token. One image uploads
+twice; the other `extractions` row never receives its image and later fails with
+§6's "Could not read screenshot". Not fixed.
+
+Also note the upload loop itself is sequential (`batches.new.tsx:190-218`, one
+`await` per file). A 500-image batch uploads one at a time.
+
+### 2.8 The template parser, and what the 35 sample screenshots taught it
+
+Every image in this workload is the same page: the operator's "Summary" screen
+for one SIM order. `src/lib/template-extract.ts` parses it by label, with no AI
+involved. Run `node scripts/check-template.ts` to exercise it — Node 22+ strips
+the types itself, so it works with no test runner and no `node_modules`.
+
+**What the page actually contains.** Order code, placement timestamp, SIM type,
+number type, phone number, name, CNIC, and — conditionally — current network,
+alternate contact, email. It has **no** package, price, charges, deposit,
+discount, reference, order status or remarks fields. Those `EXTRACT_FIELDS`
+entries staying null on a template row is correct, not a parse failure. Do not
+"fix" it by widening the parser.
+
+**`Number type` decides the phone label.** "New number" → `Onic Number`.
+"Number transfer" → `Current Number` *plus* a `Current Network` line. The
+parser makes `current_network` required only on transfers.
+
+**Four things the first version got wrong**, all found by replaying the samples
+through it (`git show HEAD~1:src/lib/template-extract.ts` for the old one):
+
+| Sample shape | Old behaviour | Why |
+|---|---|---|
+| Any September order | refused → AI call | month pattern was `[A-Za-z]{3}`; the page writes "Sept" |
+| Full-window capture | refused → AI call | order code was read from line 0, which is "Summary" |
+| Cropped top (no label) | matched, **timestamp blank** | date/time pattern required exact spacing |
+| Pencil glyph beside a label | matched, **CNIC blank** | label patterns were `$`-anchored |
+
+Of eight representative samples, the old parser refused four and silently
+returned an incomplete row for three more. **The incomplete ones are the
+dangerous half**: they save as `success` with high confidence and nothing
+surfaces them. That is why `REQUIRED_FIELDS` now lists all eight fields present
+on every sample, rather than the three it used to check.
+
+**Per-line confidence.** `readWithOcr` now returns the OCR service's
+`lines: [{text, confidence}]` and the parser gates each required field on the
+score of the line it actually came from. Before this, one blurry line of page
+chrome (a status bar, an FAQ heading) dragged the page average under
+`TEMPLATE_MIN_CONFIDENCE` and threw away a read whose fields were perfect.
+
+**Two decisions still open, both left alone deliberately:**
+- `Registered Number` appears on one sample where `Alternate Contact` usually
+  sits, and its value is the same number as that order's own `Onic Number`. It
+  is therefore not an alternate contact, so it is **not mapped** to anything
+  until someone confirms what the label means.
+- `alternative_contact` is extracted but **has no column** (§2.1). Every row
+  carrying it pays a rejected UPDATE plus the retry at
+  `extract-core.server.ts:427`.
+
+**The fixtures in `scripts/check-template.ts` are transcriptions of what is
+visible on the screenshots, not captured OCR output.** They prove the parser
+handles the layout and the known mangling; they do not prove PaddleOCR emits
+those exact lines on the VPS. Replace a fixture's text with real output (the
+command is in the file's header comment) before treating a green run as proof.
 
 ---
 
@@ -152,9 +344,20 @@ lines), `paddleocr 2.9.1` + `paddlepaddle 3.0.0`:
 | Repeat runs, same page | flat at ~5900 MB | — |
 | Synthetic page, 30 lines all the same width | 2231 MB | 3.4 s |
 
-Container limit is 6 GB, so a real page runs at the edge of an OOM kill. When it
-is killed mid-request the app sees `SocketError: other side closed` with
-`bytesRead: 0`.
+When the worker is killed mid-request the app sees `SocketError: other side
+closed` with `bytesRead: 0`.
+
+**The "6 GB container limit" in these notes does not match the repo.**
+`ocr-service/docker-compose.prod.yml:16` sets `mem_limit: ${OCR_MEMORY_LIMIT:-4g}`
+with `memswap_limit: ${OCR_MEMORY_SWAP_LIMIT:-8g}` (`:22`), and
+`ocr-service/.env.example` also carries `OCR_MEMORY_LIMIT=4g`. Whichever value
+the server's `.env` actually sets, one real page at ~5.9 GB does not fit
+comfortably in it — and per §2.6 **two** pages can be in flight at once. Confirm
+the live numbers before reasoning about an OOM:
+
+```bash
+docker inspect orderscan-ocr --format '{{.HostConfig.Memory}} {{.HostConfig.MemorySwap}}'
+```
 
 What this data says:
 - **No leak.** Repeat runs plateau; memory is reused.
@@ -180,9 +383,31 @@ per-request process isolation (slow — model load is ~600 MB and tens of second
 The fallback means neither is urgent.
 
 **Why OCR is kept at all**: the client asked for it. It is the primary path;
-`readWithOcr` in `extract-core.server.ts` returns `null` on any failure and the
+`readWithOcr` (`src/lib/extraction/ocr-read.server.ts`) returns `null` on any
+failure — no `OCR_URL`, 503 busy, 45s timeout, empty text, dead worker — and the
 screenshot goes to the model directly. Never turn an OCR failure into a failed
 row.
+
+### How much of a bulk batch actually reaches OCR
+
+Not all of it, and this is the single biggest driver of AI spend. With the
+defaults — `MAX_PARALLEL_WORKERS = 4` (`batches.$id.tsx:413`), two container
+inference slots (§2.6), `OCR_FAIL_FAST=true` (`main.py:51`) — a browser worker
+that finds every slot busy gets an instant 503, `readWithOcr` returns `null`
+(`ocr-read.server.ts:57`), and that image goes to Gemini **as an image**, which
+also skips Groq entirely (§2.5).
+
+A queueing estimate from those numbers, assuming ~8 s per inference and ~4 s per
+vision call, puts the OCR share of a large batch around 40-45% — i.e. most rows
+take the expensive path. **That is an estimate, not a measurement.** Inference
+time is the sensitive input and has not been re-measured since the
+`paddlepaddle` pin changed. Measure it with the queries in §6 before acting on
+it.
+
+`OCR_FAIL_FAST=false` trades worst-case latency for OCR coverage, and coverage
+is what costs money here: a row that reaches OCR is answered by Groq for free
+instead of by Gemini vision. It does **not** raise memory — the semaphore is
+unchanged; it only makes requests queue instead of bounce.
 
 **Cost of the fallback path**, for when this comes up: an image is ~1030 tokens
 (258 per 768×768 tile), the system prompt ~1400, the JSON answer ~500. At
@@ -287,7 +512,33 @@ docker logs orderscan-app --tail 40 | grep -v health
 # was the OCR worker OOM-killed?
 sudo dmesg -T | grep -i "killed process" | tail -5
 docker stats orderscan-ocr --no-stream
+
+# how often OCR is being skipped, and how long it takes when it works
+docker logs orderscan-app --since 30m | grep -c "OCR unavailable"
+docker logs orderscan-app --since 30m | grep "OCR read" | tail -20
+docker logs orderscan-ocr --since 30m | grep -c "OCR busy"
+
+# what the template path WOULD have returned, if it were enabled (§2.5)
+docker logs orderscan-app --since 1h | grep "\[shadow\]" | tail -20
 ```
+
+**Which path answered, and how often OCR actually ran** — the question §3's
+estimate needs measured. Run in the `EXT_` project's SQL editor:
+
+```sql
+SELECT raw_response->>'source'  AS provider,
+       raw_response->>'ocrUsed' AS ocr_used,
+       count(*),
+       round(100.0 * count(*) / sum(count(*)) OVER (), 1) AS pct
+FROM extractions
+WHERE batch_id = '<BATCH_ID>' AND status = 'success'
+GROUP BY 1, 2
+ORDER BY 3 DESC;
+```
+
+`source = gemini|gateway` with `ocr_used = false` is the expensive path. In the
+UI the same fact shows as a small **"No OCR"** badge on the row
+(`src/components/StatusBadge.tsx:39-45`).
 
 Reading the errors:
 
@@ -298,20 +549,50 @@ Reading the errors:
 | `503` / `gemini-2.0-flash` / `Recovered stale processing job` | The client's Vercel deployment, not this one |
 | Row stuck on "Queued", OCR logs repeated successes | A write is failing and being ignored |
 | Every request 500s, `__exportAll is not a function` | `inlineDynamicImports` missing from the VPS build |
+| Row succeeded but carries a "No OCR" badge | OCR was busy or down; that row took the Gemini vision path (§2.5) |
+| `Invalid AI response schema` | Model returned non-JSON or the wrong shape. Marked `failed`, **not** retried (`extract-core.server.ts:336`) |
+| `Could not read screenshot` on a row whose siblings worked | Its image was never uploaded — likely the duplicate-filename collision (§2.7) |
+| AI spend higher than expected on a clean batch | Check the §6 SQL: most rows probably show `ocr_used = false` |
 
 ---
 
 ## 7. State of play
 
-Working: deployment, login, upload, extraction end to end (verified — a real
-upload reached `success` with fields populated), auto-rollback, heartbeats
-against the foreign worker, OCR-with-fallback.
+Working: deployment, login, upload (with browser-side ZIP/PDF/HEIC expansion),
+extraction end to end (verified — a real upload reached `success` with fields
+populated), auto-rollback, heartbeats against the foreign worker,
+OCR-with-fallback, Groq-before-Gemini for the text path.
+
+**Config-only, no deploy, highest value first** — none of these need code
+changes or the client:
+- `UVICORN_WORKERS=1` in `ocr-service/.env` (§2.6). Halves OCR memory and makes
+  `OCR_MAX_CONCURRENCY` mean what it claims. Do this before anything else about
+  OCR memory.
+- `OCR_FAIL_FAST=false` (§3). More rows reach OCR, so more are answered by Groq
+  for free instead of Gemini vision. Costs latency, not memory, not accuracy.
+- Then re-run §6's SQL on one batch and see what the `source`/`ocr_used` mix
+  actually became. Everything else here is guesswork until that number exists.
 
 Open:
-- Deploy `paddlepaddle==2.6.2` and re-measure OCR memory (§3). Nothing else about
-  OCR is worth tuning until that number is known.
+- Validate the template fast path and enable it (§2.5). It is the only change
+  that removes AI calls outright rather than making them cheaper. Compare
+  `[shadow]` log lines against the same rows' `raw_response->'data'` first.
+- Deploy `paddlepaddle==2.6.2` and re-measure OCR memory (§3). Still unverified
+  whether the running container has it.
+- Decide `alternative_contact`: add the column or drop the field (§2.1). Right
+  now every successful row pays a rejected UPDATE plus a retry.
+- Verify `order_number_normalized` is actually populated (§2.1). If not,
+  duplicate detection has never worked.
+- Cap the `isRecoverableQueueFailure` retry branch (§2.4) — it is uncapped and
+  each re-drive is a fresh AI call.
+- Fix the duplicate-filename upload collision (§2.7).
+- Duplicate detection runs *after* the AI call (`extract-core.server.ts:407`).
+  Moving it before, keyed on the OCR/template `order_number`, would skip the
+  call entirely for duplicates.
 - Measure whether `OCR_DENOISE` / `OCR_CONTRAST` help or hurt on real
   screenshots — they are on by default and unproven for clean digital captures.
+  Note images already arrive ≤1200×1600 JPEG from `import-processing.ts`, so
+  `OCR_MAX_SIDE=1280` is close to a no-op for most of them.
 - Ask the client to stop their Vercel deployment's Inngest cron (§2.2).
 - `.env` was committed in two early commits and is still in git history. The keys
   in it are the client's; rotating them is the client's call, but they should be
@@ -331,3 +612,11 @@ Open:
   the output should look like.
 - Prefer surfacing a failure over papering it into a default. Most of the day's
   debugging existed because writes failed silently.
+- **This file is not the source of truth; the code is.** Several entries here
+  were wrong for weeks (worker count, container memory, "Gemini" as the only
+  provider) because the code moved and the notes did not. When they disagree,
+  believe the code and fix the note in the same change.
+- Values in `.env.example` are defaults, not what is running. The server's
+  `.env` is the only authority on `TEMPLATE_EXTRACTION_ENABLED`,
+  `UVICORN_WORKERS`, `OCR_FAIL_FAST`, `OCR_MEMORY_LIMIT` and whether
+  `LOVABLE_API_KEY` exists at all. Check it before reasoning from a default.

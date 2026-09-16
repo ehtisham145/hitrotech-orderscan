@@ -177,7 +177,11 @@ async function runExtractionUnguarded(supabase: SB, extractionId: string): Promi
   // this skips the AI call entirely — the whole reason OCR is the primary
   // path at all is that the AI call is the expensive part.
   if (ocrResult) {
-    const templateResult = tryTemplateExtraction(ocrResult.text, ocrResult.confidence);
+    const templateResult = tryTemplateExtraction(
+      ocrResult.text,
+      ocrResult.confidence,
+      ocrResult.lines,
+    );
     if (templateResult) {
       const templateEnabled = (process.env.TEMPLATE_EXTRACTION_ENABLED ?? "false").toLowerCase() === "true";
       if (templateEnabled) {
