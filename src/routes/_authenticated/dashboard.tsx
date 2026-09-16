@@ -279,7 +279,12 @@ function Dashboard() {
           </div>
         </CardHeader>
         <CardContent className="pt-2">
-          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
+          {/* Seven across only from xl. At lg (1024px) seven cards left each one
+              about 95px of content — the width that made the labels collide
+              with their icons in the first place. Below that it steps down to
+              four and then two, which is two tidy rows instead of one cramped
+              one. */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-7 gap-3">
             <StatCard icon={FileImage} label="Total Orders" value={s?.total ?? 0} loading={isLoading} />
             <StatCard icon={CheckCircle2} label="Extracted" value={s?.success ?? 0} loading={isLoading} tone="success" />
             <StatCard icon={Zap} label="Avg Accuracy" value={s?.avgConfidence ? `${Math.round(s.avgConfidence)}%` : "—"} loading={isLoading} />

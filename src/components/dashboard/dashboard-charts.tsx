@@ -41,19 +41,20 @@ export function StatCard({
   }[tone];
   return (
     <Card className="rounded-2xl border border-border bg-card shadow-[0_2px_12px_-4px_rgba(0,0,0,0.04)] transition-transform hover:-translate-y-0.5">
-      <CardContent className="pt-6">
-        {/* items-start, not items-center: a label that wraps to two lines should
-            keep the icon pinned to the top rather than drifting down beside it.
-            shrink-0 on the chip and min-w-0 on the label are what stop a single
-            long word — "PROCESSING" is the one that showed it — from running
-            underneath the icon instead of wrapping. */}
-        <div className="flex items-start justify-between gap-2 mb-3">
-          <div className="min-w-0 break-words text-xs font-medium text-muted-foreground uppercase tracking-wider">{label}</div>
-          <div className={`h-8 w-8 shrink-0 rounded-2xl grid place-items-center ${toneCfg.chip}`}>
-            <Icon className="w-4 h-4" />
-          </div>
+      {/* Icon on its own line, above the label, rather than beside it.
+          Seven of these sit in one row, so each card's content box is only
+          ~95px wide; a 32px chip plus its gap left barely 55px for the text.
+          "PROCESSING" and "EXTRACTED" are single words wider than that, so
+          side-by-side they had no way to fit — wrapping cannot help a word with
+          no space in it. Stacking gives the label the full width, which every
+          label here clears. (An earlier attempt used break-words, which does
+          make it "fit" — by splitting mid-word into PROCE/SSING. Don't.) */}
+      <CardContent className="pt-5">
+        <div className={`h-8 w-8 rounded-2xl grid place-items-center mb-3 ${toneCfg.chip}`}>
+          <Icon className="w-4 h-4" />
         </div>
-        <div className={`font-display text-3xl font-bold tracking-tight ${toneCfg.text}`}>{loading ? "—" : value}</div>
+        <div className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide leading-tight">{label}</div>
+        <div className={`font-display text-3xl font-bold tracking-tight mt-1.5 ${toneCfg.text}`}>{loading ? "—" : value}</div>
       </CardContent>
     </Card>
   );
