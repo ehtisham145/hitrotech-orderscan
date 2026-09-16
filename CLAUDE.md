@@ -563,6 +563,35 @@ function, and only those two files expose one. Every other file wraps its logic
 directly inside `createServerFn`, where it cannot be called from a test. Adding
 coverage means splitting each handler into a testable Core first.
 
+### 2.12 Server functions are only testable through a `*Core` split
+
+`createServerFn(...).handler(...)` with the logic inline cannot be called from a
+test: the `requireSupabaseAuth` middleware calls `getRequest()`, which only
+resolves inside a real request. So every handler is written as
+
+```ts
+export async function doThingCore(data: T, context: ServerContext) { /* logic */ }
+export const doThing = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: T) => input)
+  .handler(({ data, context }) => doThingCore(data, context));
+```
+
+and the test imports `doThingCore`. `ServerContext` lives in
+`src/lib/server-context.ts`.
+
+`mock-supabase.ts` queues one canned result per `.from(table)` call, FIFO per
+table, and throws if a call has none left — an incomplete mock fails loudly
+instead of silently hitting a real client. It also fakes `rpc()`:
+`assertActiveWorkspaceRole` calls `rpc("has_workspace_role")`, so **every test
+of a role-guarded function needs `allowRole()`** (or `allowRole(false)` to
+assert the refusal) or it cannot get past authorization.
+
+Coverage is partial and being worked through deliberately — money paths first
+(billing, commission, brand, reconcile, payouts), then the permission-bearing
+ones (workspace-members, admin-recovery, authz), then the rest. `stores` and
+`queue` and `batch-actions` are done.
+
 ---
 
 ## 3. OCR service — measured behaviour
@@ -720,9 +749,35 @@ NITRO_PRESET=node-server ./node_modules/.bin/vite build
 PORT=8099 node .output/server/index.mjs      # then curl /api/health
 ```
 
-`npm test` (vitest, 120 tests) and `npx tsc --noEmit -p tsconfig.json` are the
-useful checks — both pass clean, so any failure is genuinely yours.
-**`npm run lint` is not**
+**Tests.** Two suites, two toolchains:
+
+```bash
+npm test                                      # vitest — 159, TypeScript
+npx tsc --noEmit -p tsconfig.json             # typecheck — clean
+
+pip install -r ocr-service/requirements/test.txt   # once; see below
+pytest                                        # 28, the OCR service
+```
+
+Both pass clean, so any failure is genuinely yours.
+
+The Python suite needs its own dependencies and **`npm install` does not
+provide them**. Install `requirements/test.txt`, not `dev.txt`: dev pulls in
+`base.txt` and therefore paddlepaddle/paddleocr, which is a large download and
+does not install cleanly on Windows. The suite never needs them — `conftest.py`
+forces `OCR_EAGER_LOAD=false` before `app.main` is imported and every /ocr/*
+test monkeypatches `get_engine()`, so paddle's lazy import never runs.
+
+`pytest` works from the repo root (root `pytest.ini` puts `ocr-service` on the
+path) and from inside `ocr-service/`. Running it from the root without that
+config fails on `from app import preprocess`, which reads as a broken suite
+rather than a wrong working directory.
+
+Where tests live: **beside the file they cover** — `src/lib/x.ts` →
+`src/lib/x.test.ts`. Server functions are tested through their `*Core` export
+(§2.12); `src/lib/test-utils/mock-supabase.ts` is the shared fake.
+
+**`npm run lint` is not a useful check**
 — the repo has ~1600 pre-existing errors (CRLF line endings and
 `no-explicit-any`) in files nobody touched, so lint output says nothing about a
 change. Compare against an untouched file before believing a lint error is yours.

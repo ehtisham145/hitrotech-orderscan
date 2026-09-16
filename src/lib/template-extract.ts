@@ -323,7 +323,11 @@ export function tryTemplateExtraction(
     // the layout but the code did not survive", while still staying quiet on
     // unrelated documents, which match nothing.
     const found = Object.keys(data);
-    if (found.length >= 2) {
+    // Quiet under Vitest. Refusals are the normal, asserted outcome of a dozen
+    // tests here, and eight blocks of this drowned the actual run output — the
+    // log exists to explain a surprise in production, not to narrate an
+    // expectation in a test.
+    if (found.length >= 2 && !process.env.VITEST) {
       // When the order code specifically is what went missing, show the top of
       // the page too. That is where the code lives, it is the one part of this
       // layout carrying no personal data, and without it a missing code is

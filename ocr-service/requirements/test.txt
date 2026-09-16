@@ -1,0 +1,27 @@
+# Just enough to run `pytest` — deliberately NOT `-r base.txt`.
+#
+# base.txt pins paddlepaddle and paddleocr, which are a large download and do
+# not install cleanly on every dev machine (Windows/Python 3.11 in particular).
+# The suite does not need them: tests/conftest.py forces OCR_EAGER_LOAD=false
+# before app.main is imported, and every test touching an /ocr/* route
+# monkeypatches get_engine(), so the lazy `from paddleocr import PaddleOCR`
+# inside it never runs. That property was already true and documented in
+# conftest's docstring — there was just no requirements file that let you act
+# on it, so running the tests locally meant installing paddle anyway.
+#
+#   cd ocr-service
+#   pip install -r requirements/test.txt
+#   pytest
+#
+# Keep the pins in step with base.txt for anything listed in both.
+fastapi==0.115.6
+python-multipart==0.0.20
+pydantic==2.10.4
+opencv-python-headless==4.10.0.84
+pillow==11.0.0
+numpy==1.26.4
+requests==2.32.3
+
+pytest==8.3.4
+pytest-asyncio==0.25.2
+httpx==0.28.1
