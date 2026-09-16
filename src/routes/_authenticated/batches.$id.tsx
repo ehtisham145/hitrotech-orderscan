@@ -43,7 +43,15 @@ const QUEUE_HEARTBEAT_MS = 30_000;
 const MAX_AUTO_RETRIES_PER_ROW = 3;
 
 function isRecoverableQueueFailure(message: string | null | undefined) {
-  return /AI not configured|Failed to fetch|Queue failed|Background queue|AI rate limit|retrying automatically|Waiting for AI capacity|Processing directly|already_processing|already_claimed|proxy_/i.test(message ?? "");
+  // "Could not save result: ..." is finalizeExtraction's own single message
+  // prefix for every reason a post-extraction DB write can fail (deadlock,
+  // statement timeout, or anything else retryOnDeadlock's final attempt
+  // still hit) — confirmed missing here via a real bulk test where 5 rows
+  // landed "failed" with this exact prefix and simply sat there forever,
+  // since this function is an allow-list and nothing else in it matched.
+  // The extraction itself succeeded (the AI already returned real data);
+  // only the write failed, so retrying costs nothing but time.
+  return /AI not configured|Failed to fetch|Queue failed|Background queue|AI rate limit|retrying automatically|Waiting for AI capacity|Processing directly|already_processing|already_claimed|proxy_|Could not save result/i.test(message ?? "");
 }
 
 /**

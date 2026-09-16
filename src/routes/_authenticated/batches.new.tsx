@@ -38,7 +38,17 @@ export const Route = createFileRoute("/_authenticated/batches/new")({
   component: NewBatch,
 });
 
-const MAX_FILES = 500;
+// A generous safety cap, not a real product limit — this only exists to
+// catch an accidental oversized selection (mainly via the folder-picker,
+// which can easily pull in hundreds of files from one click). A batch this
+// size floods the OCR/AI pipeline's per-minute rate limits (OCR handles one
+// image at a time; Gemini's free tier allows only 20 requests/minute) far
+// worse than a normal bulk upload does — see CLAUDE.md §3 and §6 for the
+// measured numbers behind that. Enforced again server-side in
+// batch-actions.functions.ts, which is the check that actually can't be
+// bypassed; this one just gives faster, friendlier feedback before an
+// upload even starts.
+const MAX_FILES = 150;
 const ACCEPT = {
   "image/*": [".png", ".jpg", ".jpeg", ".webp", ".heic", ".heif"],
   "application/zip": [".zip"],

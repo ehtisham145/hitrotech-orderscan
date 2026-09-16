@@ -11,6 +11,7 @@ node_modules
 dist
 dist-ssr
 .output
+.vercel
 .vinxi
 .tanstack/**
 .nitro
@@ -35,6 +36,7 @@ ocr-service/backups/
 __pycache__/
 *.pyc
 .venv/
+.venv-test/
 venv/
 .pytest_cache/
 .ruff_cache/

@@ -14,6 +14,7 @@ import { SYSTEM_PROMPT, ExtractionSchema } from "@/lib/extraction/prompt";
 import { readWithOcr } from "@/lib/extraction/ocr-read.server";
 import { syncBatchCounts } from "@/lib/extraction/batch-sync.server";
 import { nowIso } from "@/lib/extraction/time";
+import { retryOnDeadlock } from "@/lib/extraction/db-retry.server";
 
 type SB = SupabaseClient<Database>;
 
@@ -98,29 +99,19 @@ async function runExtractionUnguarded(supabase: SB, extractionId: string): Promi
   // back to back. The caller-side code already expects an "already_processing"
   // result and treats it as a harmless no-op (see queue.functions.ts and
   // batches.$id.tsx) — this was the missing half of that contract.
-  // Deadlocks between two concurrent single-row claim UPDATEs are a normal,
-  // expected occurrence under bulk load (Postgres error 40P01) — the standard
-  // response is simply to retry, since the losing transaction is rolled back
-  // with no partial effect. Without this, a deadlocked claim surfaced as
-  // "claim_failed", which the caller does not treat as retryable (unlike
-  // "already_processing"), leaving a perfectly good "pending" row stuck for
-  // the rest of the page's life.
-  let claimed: { id: string }[] | null = null;
-  let claimErr: { message: string; code?: string } | null = null;
-  for (let attempt = 0; attempt < 3; attempt++) {
-    const res = await supabase
-      .from("extractions")
-      .update({ status: "processing", error_message: "Reading screenshot...", updated_at: nowIso() })
-      .eq("id", extractionId)
-      .in("status", ["pending", "failed"])
-      .select("id");
-    claimed = res.data;
-    claimErr = res.error;
-    const isDeadlock = claimErr?.code === "40P01" || /deadlock detected/i.test(claimErr?.message ?? "");
-    if (!isDeadlock) break;
-    console.warn(`[extract-core] Claim deadlocked for ${extractionId}, retrying (attempt ${attempt + 1}/3)`);
-    await new Promise((r) => setTimeout(r, 50 + Math.random() * 150));
-  }
+  // A deadlocked claim, if not retried, surfaced as "claim_failed", which the
+  // caller does not treat as retryable (unlike "already_processing"), leaving
+  // a perfectly good "pending" row stuck for the rest of the page's life.
+  const { data: claimed, error: claimErr } = await retryOnDeadlock(
+    () =>
+      supabase
+        .from("extractions")
+        .update({ status: "processing", error_message: "Reading screenshot...", updated_at: nowIso() })
+        .eq("id", extractionId)
+        .in("status", ["pending", "failed"])
+        .select("id"),
+    `Claim for ${extractionId}`,
+  );
 
   if (claimErr) {
     console.error("[extract-core] Could not claim extraction:", claimErr.message);
@@ -348,8 +339,55 @@ ${ocrText}
     return { ok: false, error: "validation_failed" };
   }
 
-  const data = parsed.data || {};
-  const confidence = parsed.confidence || {};
+  let data = parsed.data || {};
+  let confidence = parsed.confidence || {};
+
+  // A schema-valid response with every field null is not a real extraction —
+  // confirmed happening for real under concurrent OCR load: OCR returned text
+  // (ocrUsed: true) but that text was apparently unusable, Groq correctly
+  // found nothing in it, and the row still landed as "success" with a blank
+  // row in the UI (raw_response.confidence was even `{}`). If the miss came
+  // from the text-only Groq path, the image itself hasn't been tried yet —
+  // give it one real second chance via Gemini vision, bypassing whatever was
+  // wrong with the OCR text entirely, before accepting the empty result.
+  const hasCoreFields = (d: Record<string, any>) => Boolean(d.order_number || d.customer_name || d.phone_number);
+  if (!hasCoreFields(data) && provider === "groq" && GEMINI_API_KEY) {
+    console.warn(`[extract-core] Groq returned no extractable fields for ${extraction.id} — retrying via Gemini vision`);
+    try {
+      const visionMessages = [
+        { role: "system", content: SYSTEM_PROMPT },
+        {
+          role: "user",
+          content: [
+            { type: "text" as const, text: "Extract all telecom order fields from this order screenshot. Return JSON only." },
+            { type: "image_url" as const, image_url: { url: imageDataUrl } },
+          ],
+        },
+      ];
+      const retryRes = await fetch("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${GEMINI_API_KEY}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ model: "gemini-3.6-flash", messages: visionMessages, response_format: { type: "json_object" } }),
+        signal: AbortSignal.timeout(AI_TIMEOUT_MS),
+      });
+      if (retryRes.ok) {
+        const retryJson: any = await retryRes.json().catch(() => ({}));
+        const retryContent = retryJson?.choices?.[0]?.message?.content ?? "{}";
+        const retryParsed = ExtractionSchema.parse(JSON.parse(retryContent));
+        const retryData = retryParsed.data || {};
+        if (hasCoreFields(retryData)) {
+          data = retryData;
+          confidence = retryParsed.confidence || {};
+          provider = "gemini";
+          console.log(`[extract-core] Gemini vision retry recovered fields for ${extraction.id}`);
+        }
+      }
+    } catch (e: any) {
+      console.warn(`[extract-core] Gemini vision retry failed for ${extraction.id}:`, e?.message);
+      // Falls through with the original empty result — finalizeExtraction's
+      // own hasCoreFields check below still forces needs_review either way.
+    }
+  }
 
   return await finalizeExtraction(supabase, extraction, data, confidence, provider, Boolean(ocrResult));
 }
@@ -405,7 +443,16 @@ async function finalizeExtraction(
     if (batchRow.default_branch_name) update.branch_name = batchRow.default_branch_name;
   }
 
-  update.needs_review = Object.values(confidence).some((v: any) => typeof v === "number" && v < 90);
+  // A schema-valid response with every core field null still writes "success"
+  // by the checks above — confirmed happening for real (a row with every
+  // field blank in the UI, raw_response.confidence: {}). Whatever the cause,
+  // a row that identifies nothing is never a row staff should trust without
+  // looking — force it into review rather than let it blend in as plain "OK".
+  const noCoreFields = !data.order_number && !data.customer_name && !data.phone_number;
+  update.needs_review = noCoreFields || Object.values(confidence).some((v: any) => typeof v === "number" && v < 90);
+  if (noCoreFields) {
+    console.warn(`[extract-core] ${extraction.id} has no order_number/customer_name/phone_number via ${source} — forcing needs_review`);
+  }
 
   const incomingOrder = (data.order_number ?? "").toString().trim().toUpperCase().replace(/O/g, "0").replace(/[IL]/g, "1");
   if (incomingOrder) {
@@ -422,11 +469,10 @@ async function finalizeExtraction(
     }
   }
 
-  let { data: writtenRows, error: writeErr } = await supabase
-    .from("extractions")
-    .update(update as any)
-    .eq("id", extraction.id)
-    .select("id");
+  let { data: writtenRows, error: writeErr } = await retryOnDeadlock(
+    () => supabase.from("extractions").update(update as any).eq("id", extraction.id).select("id"),
+    `Save result for ${extraction.id}`,
+  );
 
   // A column the deployment's schema does not have yet (e.g. alternative_contact
   // before its migration ran) rejects the whole update. Drop it and retry once
@@ -437,11 +483,10 @@ async function finalizeExtraction(
     if (col && col in update) {
       console.warn(`[extract-core] Column "${col}" missing in schema — retrying without it.`);
       delete update[col];
-      const retry = await supabase
-        .from("extractions")
-        .update(update as any)
-        .eq("id", extraction.id)
-        .select("id");
+      const retry = await retryOnDeadlock(
+        () => supabase.from("extractions").update(update as any).eq("id", extraction.id).select("id"),
+        `Save result for ${extraction.id} (retry without missing column)`,
+      );
       writtenRows = retry.data;
       writeErr = retry.error;
     }
