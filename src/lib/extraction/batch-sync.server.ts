@@ -13,7 +13,48 @@ import { retryOnDeadlock } from "./db-retry.server";
 
 type SB = SupabaseClient<Database>;
 
-export async function syncBatchCounts(supabase: SB, batchId: string) {
+// How long callers arriving back-to-back are collapsed into one recompute.
+// Long enough that a wave of workers finishing together produces one write
+// instead of one each; short enough that the batch page's ~1s poll still sees
+// fresh counts.
+const COALESCE_MS = Number(process.env.BATCH_SYNC_COALESCE_MS) || 500;
+
+// One in-flight recompute per batch. Every extraction used to call this as it
+// finished, so a 25-image batch did 25 full SELECTs of the batch plus up to 25
+// writes to the same `batches` row — the largest single source of the
+// deadlocks that wedged rows in `processing` (CLAUDE.md 2.9). Retrying through
+// that contention was never going to be enough: a later run still had
+// "Could not even mark <id> failed: deadlock detected" after five attempts.
+// Collapsing the callers removes the contention instead of surviving it.
+const pendingSyncs = new Map<string, Promise<void>>();
+
+/**
+ * Recomputes a batch's counts, collapsing concurrent callers into one run.
+ *
+ * Callers still await a real recompute — this is not fire-and-forget. What it
+ * drops is the *duplicate* work: everyone arriving inside the same window
+ * shares one recompute, and the map entry is released before the write starts,
+ * so anything that finishes during the write schedules a fresh run. The final
+ * state is therefore always written, which is what makes this safe to collapse.
+ */
+export function syncBatchCounts(supabase: SB, batchId: string): Promise<void> {
+  const existing = pendingSyncs.get(batchId);
+  if (existing) return existing;
+
+  const run = (async () => {
+    await new Promise((r) => setTimeout(r, COALESCE_MS));
+    // Released before the work, not after: a caller that finishes while this
+    // recompute is mid-flight must be able to queue another one, or its result
+    // would never reach the counts.
+    pendingSyncs.delete(batchId);
+    await recomputeBatchCounts(supabase, batchId);
+  })();
+
+  pendingSyncs.set(batchId, run);
+  return run;
+}
+
+async function recomputeBatchCounts(supabase: SB, batchId: string) {
   const { data: batchExtractions } = await supabase
     .from("extractions")
     .select("status, is_duplicate, anomalies")

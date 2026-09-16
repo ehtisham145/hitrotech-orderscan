@@ -84,6 +84,51 @@ function asOrderCode(line: string): string | null {
   return ORDER_CODE_PATTERN.test(compact) ? compact : null;
 }
 
+// The code embedded in a longer line, e.g. when the detector merged the label
+// and its value into one box ("Order number CXO-4CISTI1BFTJ3HR3").
+//
+// Substring matching needs a tighter shape than the whole-line form, because
+// ordinary hyphenated English matches the bare pattern — "Self-pickup" is
+// four letters, a hyphen and six alphanumerics. The tail must therefore
+// contain a digit: all 35 sampled codes do, and hyphenated words do not.
+const EMBEDDED_ORDER_CODE = /\b([A-Z]{2,6}-[A-Z0-9]{6,24})\b/i;
+
+// The code split across two detected boxes, leaving a dangling prefix on one
+// line and the rest on the next ("CXO-" / "4CISTI1BFTJ3HR3"). Same split the
+// "|" in the timestamp causes, for the same reason.
+const DANGLING_PREFIX = /^[A-Z]{2,6}-$/i;
+const CODE_TAIL = /^[A-Z0-9]{6,24}$/i;
+
+function hasDigit(s: string): boolean {
+  return /\d/.test(s);
+}
+
+/** Finds the order code across every shape OCR has been seen to produce. */
+function findOrderCode(rows: TemplateLine[]): { code: string; lineIndex: number } | null {
+  // 1. A line that is nothing but the code.
+  for (let i = 0; i < rows.length; i++) {
+    const code = asOrderCode(rows[i].text);
+    if (code) return { code, lineIndex: i };
+  }
+
+  // 2. Split across two consecutive lines.
+  for (let i = 0; i < rows.length - 1; i++) {
+    const head = rows[i].text.replace(/\s+/g, "");
+    const tail = rows[i + 1].text.replace(/\s+/g, "");
+    if (DANGLING_PREFIX.test(head) && CODE_TAIL.test(tail) && hasDigit(tail)) {
+      return { code: head + tail, lineIndex: i + 1 };
+    }
+  }
+
+  // 3. Embedded in a longer line, most likely merged with its own label.
+  for (let i = 0; i < rows.length; i++) {
+    const m = EMBEDDED_ORDER_CODE.exec(rows[i].text.replace(/\s+/g, " "));
+    if (m && hasDigit(m[1])) return { code: m[1], lineIndex: i };
+  }
+
+  return null;
+}
+
 // Order matters only where two patterns could match one line — none currently do.
 const LABEL_MAP: LabelRule[] = [
   {
@@ -253,8 +298,8 @@ export function tryTemplateExtraction(
   // capture line 0 is "Summary", so reading line 0 as the code found nothing
   // and the row fell through to the AI every time.
   if (data.order_number == null) {
-    const idx = rows.findIndex((r) => asOrderCode(r.text) !== null);
-    if (idx !== -1) assign("order_number", asOrderCode(rows[idx].text)!, idx);
+    const found = findOrderCode(rows);
+    if (found) assign("order_number", found.code, found.lineIndex);
   }
 
   const required = [...REQUIRED_FIELDS];
@@ -279,8 +324,16 @@ export function tryTemplateExtraction(
     // unrelated documents, which match nothing.
     const found = Object.keys(data);
     if (found.length >= 2) {
+      // When the order code specifically is what went missing, show the top of
+      // the page too. That is where the code lives, it is the one part of this
+      // layout carrying no personal data, and without it a missing code is
+      // only diagnosable by re-running the image through OCR by hand.
+      const head =
+        data.order_number == null
+          ? ` | first lines: ${rows.slice(0, 3).map((r) => JSON.stringify(r.text)).join(" ")}`
+          : "";
       console.log(
-        `[template] refused ${data.order_number ?? "(no order code)"} — missing: ${missing.join(", ")} | found: ${found.join(", ")}`,
+        `[template] refused ${data.order_number ?? "(no order code)"} — missing: ${missing.join(", ")} | found: ${found.join(", ")}${head}`,
       );
     }
     return null;

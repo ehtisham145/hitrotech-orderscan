@@ -333,6 +333,17 @@ activation_date/activation_time" — they went to Groq, which cost nothing but
 also returned null for both fields, which is how the split was spotted at all.
 The parser now reads both shapes.
 
+**The order code is what OCR mangles most.** It is a long run of ambiguous
+glyphs, and losing it loses the whole row — both the required set and the
+fallback scan hang on it. A live batch refused rows with **all nine other
+fields present** and only `order_number` missing. Three shapes are now handled,
+all seen or plausible from the same box-splitting behaviour as the timestamp:
+the code alone on a line (with internal spaces tolerated), split across two
+boxes (`CXO-` / `4CISTI…`), and merged into one box with its own label
+(`Order number CXO-4CISTI…`). The embedded form additionally requires a digit
+in the tail, because ordinary hyphenated English otherwise matches — all 35
+sampled codes contain a digit and `Self-pickup` does not.
+
 **A refusal now says why.** `[template] refused <order_number> — missing: ...`
 is logged whenever the parser recognised the layout (it found an order code)
 but bailed on a required field. Before this a near miss was completely silent,
@@ -420,11 +431,20 @@ fixed:
   are unchanged. Several workers finishing in the same moment all recompute the
   same totals and used to queue identical writes against one row.
 
-**Still open, if this recurs:** `syncBatchCounts` runs once per extraction and
-each run costs a full SELECT of the batch plus a possible shared-row write.
-Coalescing it (one sync per batch per second, trailing edge) is the next lever
-and has not been done. Also note `queue.functions.ts` keeps its own second copy
-of the count logic (§ the file's own comment) — they contend with each other.
+**Retries alone were not enough, and the fix was to stop generating the
+contention.** A later batch still produced `Could not even mark <id> failed:
+deadlock detected` after all five attempts, and wedged a row in `processing`
+again. `syncBatchCounts` now **coalesces**: concurrent callers for one batch
+share a single recompute (`BATCH_SYNC_COALESCE_MS`, default 500). A 25-image
+batch used to do 25 full SELECTs of the batch plus up to 25 writes to the one
+shared `batches` row; it now does a handful. Callers still await a real
+recompute — the map entry is released *before* the write, so anything finishing
+mid-write queues a fresh run and the final state is always written.
+
+**Still open:** `queue.functions.ts` keeps its own second copy of the count
+logic (see that file's comment) and contends with this one. The browser's
+auto-queue effect (5s) and `keepBatchRowsFresh` (30s) are both multi-row
+UPDATEs against the same rows the workers are claiming.
 
 **Reading the logs.** `docker logs orderscan-app | grep -c "OCR read"` counts
 *more* than the batch size when rows are re-driven; that is the symptom, not a

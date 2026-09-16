@@ -241,6 +241,39 @@ describe("tryTemplateExtraction", () => {
       expect(tryTemplateExtraction(notACode, 0.97)).toBeNull();
     });
 
+    // A live batch refused rows with all nine other fields present and only
+    // order_number missing, so the code line itself is what OCR mangles. These
+    // three shapes are what it can arrive as.
+    it("reads an order code merged into one box with its own label", () => {
+      const merged = REAL_SAMPLE.replace(
+        "CXO-2JDUW9NDWPXF6N3",
+        "Order number CXO-2JDUW9NDWPXF6N3",
+      );
+      const result = tryTemplateExtraction(merged, 0.97);
+      expect(result).not.toBeNull();
+      expect(result!.data.order_number).toBe("CXO-2JDUW9NDWPXF6N3");
+    });
+
+    it("reads an order code split across two boxes", () => {
+      const split = REAL_SAMPLE.replace(
+        "CXO-2JDUW9NDWPXF6N3",
+        ["CXO-", "2JDUW9NDWPXF6N3"].join("\n"),
+      );
+      const result = tryTemplateExtraction(split, 0.97);
+      expect(result).not.toBeNull();
+      expect(result!.data.order_number).toBe("CXO-2JDUW9NDWPXF6N3");
+    });
+
+    it("does not pull a hyphenated word out of a sentence as an order code", () => {
+      // Every field but the code, plus prose containing "self-pickup" — the
+      // embedded matcher must not rescue this into a bogus order number.
+      const noCode = REAL_SAMPLE.split("\n")
+        .filter((l) => l !== "CXO-2JDUW9NDWPXF6N3")
+        .concat("Ready for self-pickup point collection")
+        .join("\n");
+      expect(tryTemplateExtraction(noCode, 0.97)).toBeNull();
+    });
+
     it("still matches the label when the pencil glyph is read as a stray character", () => {
       const withGlyphs = REAL_SAMPLE.replace("CNIC number", "CNIC number 2") + "\nAlternate Contact /\n03-001209900";
       const result = tryTemplateExtraction(withGlyphs, 0.97);
