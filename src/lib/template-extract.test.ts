@@ -229,6 +229,18 @@ describe("tryTemplateExtraction", () => {
       expect(tryTemplateExtraction(dateOnly, 0.97)).toBeNull();
     });
 
+    it("reads an order code that OCR dropped a space into", () => {
+      const spaced = REAL_SAMPLE.replace("CXO-2JDUW9NDWPXF6N3", "CXO-2JDUW9 NDWPXF6N3");
+      const result = tryTemplateExtraction(spaced, 0.97);
+      expect(result).not.toBeNull();
+      expect(result!.data.order_number).toBe("CXO-2JDUW9NDWPXF6N3");
+    });
+
+    it("does not mistake an ordinary hyphenated line for an order code", () => {
+      const notACode = ["Self-pickup point", "Some-other-text here"].join("\n");
+      expect(tryTemplateExtraction(notACode, 0.97)).toBeNull();
+    });
+
     it("still matches the label when the pencil glyph is read as a stray character", () => {
       const withGlyphs = REAL_SAMPLE.replace("CNIC number", "CNIC number 2") + "\nAlternate Contact /\n03-001209900";
       const result = tryTemplateExtraction(withGlyphs, 0.97);

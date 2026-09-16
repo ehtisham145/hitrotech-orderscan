@@ -69,14 +69,27 @@ type LabelRule = {
 // The order code, e.g. "CXO-4CISTI1BFTJ3HR3": a short run of letters, a
 // hyphen, then 6-24 alphanumerics. Bounded on the right so a long line that
 // happens to contain a hyphen cannot be mistaken for a code.
+//
+// Matched against the line with its whitespace stripped. These codes are a
+// long run of ambiguous glyphs and PaddleOCR readily drops a space into the
+// middle of one ("CXO-5ETGM9 MFIU7AQNC"), which an unforgiving whole-line
+// match rejects outright — and losing the order code loses the whole row,
+// since it is the field the fallback scan and the required-set both hang on.
+// Stripping spaces cannot create a false positive: the shape still has to be
+// letters, one hyphen, then alphanumerics.
 const ORDER_CODE_PATTERN = /^[A-Z]{2,6}-[A-Z0-9-]{6,24}$/i;
+
+function asOrderCode(line: string): string | null {
+  const compact = line.replace(/\s+/g, "");
+  return ORDER_CODE_PATTERN.test(compact) ? compact : null;
+}
 
 // Order matters only where two patterns could match one line — none currently do.
 const LABEL_MAP: LabelRule[] = [
   {
     pattern: /^order\s*number$/i,
     field: "order_number",
-    validate: (v) => ORDER_CODE_PATTERN.test(v),
+    validate: (v) => asOrderCode(v) !== null,
   },
   // "Onic Number" on new-number orders, "Current Number" on transfers.
   { pattern: /^(onic|current)\s*(\/\s*onic)?\s*number$/i, field: "phone_number" },
@@ -240,8 +253,8 @@ export function tryTemplateExtraction(
   // capture line 0 is "Summary", so reading line 0 as the code found nothing
   // and the row fell through to the AI every time.
   if (data.order_number == null) {
-    const idx = rows.findIndex((r) => ORDER_CODE_PATTERN.test(r.text));
-    if (idx !== -1) assign("order_number", rows[idx].text, idx);
+    const idx = rows.findIndex((r) => asOrderCode(r.text) !== null);
+    if (idx !== -1) assign("order_number", asOrderCode(rows[idx].text)!, idx);
   }
 
   const required = [...REQUIRED_FIELDS];
@@ -255,15 +268,19 @@ export function tryTemplateExtraction(
   });
   if (missing.length > 0) {
     // A near miss is the interesting case and used to be completely silent:
-    // the row simply went to the AI with nothing said about why. Finding out
-    // that five rows were refused over a split timestamp took a database
-    // query against already-saved rows, which only worked because the AI
-    // happened to leave the same fields null. Log it when the page looks like
-    // this layout at all (an order code was found), and stay quiet otherwise
-    // so unrelated documents don't spam the log.
-    if (data.order_number) {
+    // the row simply went to the AI with nothing said about why.
+    //
+    // The first version of this log only fired when an order code had been
+    // found, which turned out to hide exactly the case that needed
+    // explaining — a batch left four rows on the AI path and produced no
+    // refusal lines at all, because whatever went wrong took the order code
+    // with it. Firing on two matched labels instead covers "this is clearly
+    // the layout but the code did not survive", while still staying quiet on
+    // unrelated documents, which match nothing.
+    const found = Object.keys(data);
+    if (found.length >= 2) {
       console.log(
-        `[template] refused ${data.order_number} — missing: ${missing.join(", ")}`,
+        `[template] refused ${data.order_number ?? "(no order code)"} — missing: ${missing.join(", ")} | found: ${found.join(", ")}`,
       );
     }
     return null;
