@@ -34,7 +34,7 @@ export function createMockSupabase() {
     const chain: Record<string, unknown> = {};
     const passthroughMethods = [
       "select", "insert", "update", "delete", "upsert",
-      "eq", "neq", "in", "order", "limit", "gte", "lte", "gt", "lt", "is", "not",
+      "eq", "neq", "in", "order", "limit", "range", "gte", "lte", "gt", "lt", "is", "not", "contains",
       "single", "maybeSingle",
     ];
     // vi.fn() wrappers (not plain arrows) so a test can assert on how the
