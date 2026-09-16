@@ -67,7 +67,7 @@ client explicitly agreeing — other deployments of theirs read from it.
 | `src/lib/extraction/prompt.ts` | System prompt + the zod schema the model must return |
 | `src/lib/extraction/batch-sync.server.ts` | Recomputes batch counts; fires the batch-completed notification |
 | `src/lib/template-extract.ts` | Free label-matching fast path for the client's own layout (§2.5, §2.8) |
-| `scripts/check-template.ts` | Offline parser check — `node scripts/check-template.ts`, no deps needed |
+| `src/lib/template-extract.test.ts` | The parser's tests — `npm test`, 19 cases |
 | `src/lib/import-processing.ts` | **Browser-side** ZIP/PDF/HEIC expansion + resize, before upload |
 | `src/lib/batch-actions.functions.ts` | Creates the batch, the rows, and the signed upload URLs |
 | `src/lib/queue.functions.ts` | Server functions the batch page calls |
@@ -279,8 +279,7 @@ Also note the upload loop itself is sequential (`batches.new.tsx:190-218`, one
 
 Every image in this workload is the same page: the operator's "Summary" screen
 for one SIM order. `src/lib/template-extract.ts` parses it by label, with no AI
-involved. Run `node scripts/check-template.ts` to exercise it — Node 22+ strips
-the types itself, so it works with no test runner and no `node_modules`.
+involved. `npm test` covers it (`src/lib/template-extract.test.ts`, 19 cases).
 
 **What the page actually contains.** Order code, placement timestamp, SIM type,
 number type, phone number, name, CNIC, and — conditionally — current network,
@@ -324,11 +323,32 @@ chrome (a status bar, an FAQ heading) dragged the page average under
   carrying it pays a rejected UPDATE plus the retry at
   `extract-core.server.ts:427`.
 
-**The fixtures in `scripts/check-template.ts` are transcriptions of what is
-visible on the screenshots, not captured OCR output.** They prove the parser
-handles the layout and the known mangling; they do not prove PaddleOCR emits
-those exact lines on the VPS. Replace a fixture's text with real output (the
-command is in the file's header comment) before treating a green run as proof.
+**Is CNIC really required? — unsettled, and it matters.** `REQUIRED_FIELDS`
+includes `cnic` because all 35 reviewed screenshots carry it, and a SIM
+registration row without one is not worth saving. But the `REAL_SAMPLE` fixture
+that arrived with the test suite — commented "confirmed against a live upload"
+— has **no CNIC line**, and its field order differs from every one of the 35
+screenshots. One of the two is unrepresentative and it is not yet known which.
+
+The fixture was given its CNIC pair so the suite reflects the 35 screenshots,
+i.e. the strict reading. **If the shadow logs from a real batch show rows
+matching without a CNIC line, that choice is wrong** and `cnic` should move out
+of `REQUIRED_FIELDS` — being wrong this way costs AI calls, whereas being wrong
+the other way writes incomplete rows into the client's database, which nothing
+surfaces. Settle it with data:
+
+```bash
+docker logs orderscan-app --since 30m | grep -c "\[shadow\]"     # how many matched
+docker logs orderscan-app --since 30m | grep "\[shadow\]" | tail -5
+```
+
+A shadow count well below the batch size means the gate is too strict; check
+whether the missing field is `cnic` before loosening anything else.
+
+**Test fixtures other than `REAL_SAMPLE` are transcriptions of what is visible
+on the screenshots, not captured OCR output.** They prove the parser handles the
+layout and the known mangling; they do not prove PaddleOCR emits those exact
+lines on the VPS.
 
 ---
 
@@ -485,7 +505,9 @@ NITRO_PRESET=node-server ./node_modules/.bin/vite build
 PORT=8099 node .output/server/index.mjs      # then curl /api/health
 ```
 
-`npx tsc --noEmit -p tsconfig.json` is the useful check. **`npm run lint` is not**
+`npm test` (vitest, 120 tests) and `npx tsc --noEmit -p tsconfig.json` are the
+useful checks — both pass clean, so any failure is genuinely yours.
+**`npm run lint` is not**
 — the repo has ~1600 pre-existing errors (CRLF line endings and
 `no-explicit-any`) in files nobody touched, so lint output says nothing about a
 change. Compare against an untouched file before believing a lint error is yours.

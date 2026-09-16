@@ -2,9 +2,14 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { tryTemplateExtraction } from "./template-extract";
 
 // Real-shaped sample, matching what PaddleOCR actually returns for the
-// client's order page (confirmed against a live upload this session —
-// unlabeled order code first, "Order Placed on"'s date+time glued together
-// with no separator, "Onic Number" not "Order Number").
+// client's order page (confirmed against a live upload — unlabeled order code
+// first, "Order Placed on"'s date+time glued together with no separator,
+// "Onic Number" not "Order Number").
+//
+// The CNIC pair was added after reviewing 35 real screenshots of this page:
+// every one of them carries "CNIC number" and a 13-digit value, and the
+// parser now treats it as required. See the "refuses a capture with no CNIC"
+// test below for why that is deliberate rather than incidental.
 const REAL_SAMPLE = [
   "CXO-2JDUW9NDWPXF6N3",
   "Order Placed on",
@@ -17,7 +22,12 @@ const REAL_SAMPLE = [
   "Physical SIM",
   "Number type",
   "New number",
+  "CNIC number",
+  "3820198722966",
 ].join("\n");
+
+const lineOf = (sample: string, confidenceByText: Record<string, number> = {}, base = 0.97) =>
+  sample.split("\n").map((text) => ({ text, confidence: confidenceByText[text] ?? base }));
 
 describe("tryTemplateExtraction", () => {
   const originalMinConfidence = process.env.TEMPLATE_MIN_CONFIDENCE;
@@ -40,6 +50,7 @@ describe("tryTemplateExtraction", () => {
       number_type: "New number",
       activation_date: "08 Aug 2026",
       activation_time: "11:50 AM",
+      cnic: "3820198722966",
     });
   });
 
@@ -71,8 +82,8 @@ describe("tryTemplateExtraction", () => {
   it("does not corrupt a field when the OCR line right after a label is missing (isKnownLabel guard)", () => {
     // "Name" is immediately followed by another label ("Onic Number") because
     // the actual name value line was dropped/blurred in this OCR pass. Without
-    // the isKnownLabel guard this bug (found and fixed earlier this session)
-    // would silently set customer_name to the literal string "Onic Number".
+    // the isKnownLabel guard this bug (found and fixed earlier) would silently
+    // set customer_name to the literal string "Onic Number".
     const droppedNameValue = [
       "CXO-2JDUW9NDWPXF6N3",
       "Name",
@@ -90,6 +101,8 @@ describe("tryTemplateExtraction", () => {
     const result = tryTemplateExtraction(withOptional, 0.97);
     expect(result!.data.alternative_contact).toBe("03-473687403");
     expect(result!.data.email).toBe("customer@example.com");
+    // And the base sample, which has neither, still matches.
+    expect(tryTemplateExtraction(REAL_SAMPLE, 0.97)).not.toBeNull();
   });
 
   it("returns null for OCR text from a completely different layout (no labels match at all)", () => {
@@ -102,5 +115,120 @@ describe("tryTemplateExtraction", () => {
     expect(result).not.toBeNull();
     const values = Object.values(result!.confidence);
     expect(values.every((v) => v === 96)).toBe(true); // 95.5 rounds to 96
+  });
+
+  // ── Required-field policy ──────────────────────────────────────────────────
+  // Every one of the 35 reviewed screenshots carries all eight of these. A
+  // capture missing one was cropped, so the AI should look at it rather than
+  // this parser saving a half-empty row. An incomplete row that reports
+  // "success" is worse than a failed one: nothing surfaces it, and it reaches
+  // the client's database looking correct.
+  describe("required fields", () => {
+    it("refuses a capture with no CNIC rather than saving the row without it", () => {
+      const noCnic = REAL_SAMPLE.split("\n").slice(0, -2).join("\n");
+      expect(tryTemplateExtraction(noCnic, 0.97)).toBeNull();
+    });
+
+    it("refuses a capture whose timestamp line never came through", () => {
+      const noTimestamp = REAL_SAMPLE.split("\n")
+        .filter((l) => l !== "Order Placed on" && l !== "08 Aug202611:50 AM")
+        .join("\n");
+      expect(tryTemplateExtraction(noTimestamp, 0.97)).toBeNull();
+    });
+
+    it("requires current_network on a transfer order, but not on a new-number order", () => {
+      const transfer = [
+        "CXO-RAVKYRZ6RESYX8I",
+        "Order Placed on",
+        "15 Aug 2026 | 09:47 AM",
+        "SIM type",
+        "Physical SIM",
+        "Number type",
+        "Number transfer",
+        "Current Number",
+        "033 1770 6610",
+        "Name",
+        "Yasir Rehamn",
+        "CNIC number",
+        "3820184640883",
+      ].join("\n");
+      // No "Current Network" line -> refused, because a transfer always has one.
+      expect(tryTemplateExtraction(transfer, 0.97)).toBeNull();
+
+      const withNetwork = transfer.replace(
+        "Name\nYasir Rehamn",
+        "Current Network\nUfone\nName\nYasir Rehamn",
+      );
+      const result = tryTemplateExtraction(withNetwork, 0.97);
+      expect(result!.data).toMatchObject({
+        number_type: "Number transfer",
+        phone_number: "033 1770 6610",
+        current_network: "Ufone",
+      });
+    });
+  });
+
+  // ── Layout variants seen across the 35 screenshots ────────────────────────
+  describe("layout variants", () => {
+    it("reads a September order — the month is written 'Sept', not 'Sep'", () => {
+      const sept = REAL_SAMPLE.replace("08 Aug202611:50 AM", "13 Sept 2026 | 01:44 PM");
+      const result = tryTemplateExtraction(sept, 0.97);
+      expect(result!.data).toMatchObject({
+        activation_date: "13 Sept 2026",
+        activation_time: "01:44 PM",
+      });
+    });
+
+    it("finds the order code on a full-window capture, where line 0 is page chrome", () => {
+      const fullWindow = ["Summary", "SIM Details", "Personal Details", "Order number", REAL_SAMPLE].join("\n");
+      const result = tryTemplateExtraction(fullWindow, 0.97);
+      expect(result!.data.order_number).toBe("CXO-2JDUW9NDWPXF6N3");
+    });
+
+    it("ignores trailing FAQ text and status-bar digits", () => {
+      const noisy = ["80", "Summary", REAL_SAMPLE, "Commonly Asked Questions", "When will my order be ready for pickup at the self-pickup point?"].join("\n");
+      const result = tryTemplateExtraction(noisy, 0.97);
+      expect(result!.data).toMatchObject({
+        order_number: "CXO-2JDUW9NDWPXF6N3",
+        customer_name: "Adeel Zafar",
+        cnic: "3820198722966",
+      });
+    });
+
+    it("still matches the label when the pencil glyph is read as a stray character", () => {
+      const withGlyphs = REAL_SAMPLE.replace("CNIC number", "CNIC number 2") + "\nAlternate Contact /\n03-001209900";
+      const result = tryTemplateExtraction(withGlyphs, 0.97);
+      expect(result!.data.cnic).toBe("3820198722966");
+      expect(result!.data.alternative_contact).toBe("03-001209900");
+    });
+  });
+
+  // ── Per-line confidence ───────────────────────────────────────────────────
+  // The OCR service scores every line; readWithOcr now forwards those. Gating
+  // each field on its own line's score, rather than on the page average, is
+  // what stops one blurry line of page chrome from discarding a clean read.
+  describe("per-line confidence", () => {
+    it("refuses when a REQUIRED field's own line was read badly", () => {
+      const lines = lineOf(REAL_SAMPLE, { "3820198722966": 0.55 });
+      expect(tryTemplateExtraction(REAL_SAMPLE, 0.94, lines)).toBeNull();
+    });
+
+    it("keeps the row when only an OPTIONAL field's line was read badly, flagged low for review", () => {
+      const sample = REAL_SAMPLE + "\nEmail\ncustomer@example.com";
+      const lines = lineOf(sample, { "customer@example.com": 0.6 });
+      const result = tryTemplateExtraction(sample, 0.94, lines);
+      expect(result).not.toBeNull();
+      expect(result!.data.email).toBe("customer@example.com");
+      expect(result!.confidence.email).toBe(60); // caller turns <90 into needs_review
+      expect(result!.confidence.cnic).toBe(97);
+    });
+
+    it("matches even when noisy page chrome drags the page average under the threshold", () => {
+      const sample = ["80", "Summary", "Commonly Asked Questions", REAL_SAMPLE].join("\n");
+      const lines = lineOf(sample, { "80": 0.31, Summary: 0.44, "Commonly Asked Questions": 0.4 });
+      const pageAverage = lines.reduce((a, l) => a + l.confidence, 0) / lines.length;
+      expect(pageAverage * 100).toBeLessThan(90); // the old page-average gate would have refused
+      expect(tryTemplateExtraction(sample, pageAverage, lines)).not.toBeNull();
+    });
   });
 });
