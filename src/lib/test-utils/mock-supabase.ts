@@ -86,14 +86,26 @@ export function createMockSupabase() {
     queueRpc("has_workspace_role", { data: allowed, error: null });
   }
 
+  // Awaitable *and* chainable: some callers await rpc() directly, others append
+  // .maybeSingle()/.single() to it (a set-returning SQL function). Returning a
+  // bare promise breaks the second group.
   const rpc = vi.fn((fn: string, _args?: unknown) => {
-    const q = rpcQueues.get(fn);
-    if (!q || q.length === 0) {
-      throw new Error(
-        `mock-supabase: no queued response for .rpc("${fn}") — call queueRpc("${fn}", ...) or allowRole() before running this test.`,
-      );
-    }
-    return Promise.resolve(q.shift()!);
+    const take = () => {
+      const q = rpcQueues.get(fn);
+      if (!q || q.length === 0) {
+        throw new Error(
+          `mock-supabase: no queued response for .rpc("${fn}") — call queueRpc("${fn}", ...) or allowRole() before running this test.`,
+        );
+      }
+      return q.shift()!;
+    };
+    const result: Record<string, unknown> = {
+      then: (onFulfilled: (v: MockResult) => unknown, onRejected?: (e: unknown) => unknown) =>
+        Promise.resolve(take()).then(onFulfilled, onRejected),
+      maybeSingle: () => Promise.resolve(take()),
+      single: () => Promise.resolve(take()),
+    };
+    return result;
   });
 
   const createSignedUploadUrl = vi.fn();
