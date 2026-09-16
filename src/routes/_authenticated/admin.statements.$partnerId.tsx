@@ -156,7 +156,7 @@ function StatementPage() {
         {/* Header */}
         <div className="flex items-start justify-between border-b border-border pb-4">
           <div className="flex items-center gap-3">
-            <div className="h-14 w-14 rounded-xl bg-white border border-border/60 grid place-items-center overflow-hidden">
+            <div className="h-14 w-14 rounded-xl bg-card border border-border/60 grid place-items-center overflow-hidden">
               <img src={logo.url} alt="HitroTech Telecom" className="h-11 w-11 object-contain" />
             </div>
             <div>

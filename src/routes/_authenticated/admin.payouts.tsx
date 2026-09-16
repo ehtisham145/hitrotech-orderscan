@@ -311,7 +311,7 @@ function PayoutsPage() {
           <div className="flex items-center gap-2">
             <h1 className="text-2xl font-semibold tracking-tight">Payouts</h1>
             {locked && (
-              <Badge className="bg-slate-500/15 text-slate-700 border-slate-500/30 hover:bg-slate-500/15">
+              <Badge className="bg-slate-500/15 text-muted-foreground border-slate-500/30 hover:bg-slate-500/15">
                 <Lock className="w-3 h-3 mr-1" /> Month locked
               </Badge>
             )}
@@ -639,7 +639,7 @@ function PayoutsPage() {
                     <div className="text-muted-foreground uppercase tracking-wider text-[10px] mb-1">Recent history for this month</div>
                     {lockHistory.map((h) => (
                       <div key={h.id} className="flex items-center gap-2">
-                        {h.action === "month.locked" ? <Lock className="w-3 h-3 text-slate-500" /> : <Unlock className="w-3 h-3 text-emerald-600" />}
+                        {h.action === "month.locked" ? <Lock className="w-3 h-3 text-muted-foreground" /> : <Unlock className="w-3 h-3 text-emerald-600" />}
                         <span className="font-medium">{h.action === "month.locked" ? "Locked" : "Unlocked"}</span>
                         <span className="text-muted-foreground">by {h.actor_name ?? "someone"}</span>
                         <span className="text-muted-foreground ml-auto">{format(new Date(h.created_at), "d MMM, HH:mm")}</span>

@@ -19,7 +19,7 @@ const FLAG_META: Record<string, { label: string; icon: typeof AlertTriangle; ton
   unknown_store_id: { label: "Unknown store", icon: Store, tone: "text-orange-600 border-orange-500/40 bg-orange-500/10" },
   missing_phone: { label: "Missing phone", icon: Phone, tone: "text-red-600 border-red-500/40 bg-red-500/10" },
   malformed_phone: { label: "Malformed phone", icon: Phone, tone: "text-red-600 border-red-500/40 bg-red-500/10" },
-  missing_order_number: { label: "No order #", icon: Hash, tone: "text-slate-600 border-slate-500/40 bg-slate-500/10" },
+  missing_order_number: { label: "No order #", icon: Hash, tone: "text-muted-foreground border-slate-500/40 bg-slate-500/10" },
   repeat_phone_this_month: { label: "Repeat phone", icon: Repeat, tone: "text-purple-600 border-purple-500/40 bg-purple-500/10" },
 };
 

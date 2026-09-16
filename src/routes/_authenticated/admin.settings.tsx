@@ -1138,7 +1138,7 @@ function TotpPanel() {
       <div className="space-y-3">
         <p className="text-xs text-muted-foreground">Scan with Google Authenticator, 1Password, or Authy, then enter the 6-digit code.</p>
         <div className="flex items-start gap-4 flex-wrap">
-          <img src={enrollment.qr} alt="TOTP QR code" className="w-40 h-40 border rounded-2xl bg-white p-2" />
+          <img src={enrollment.qr} alt="TOTP QR code" className="w-40 h-40 border rounded-2xl bg-card p-2" />
           <div className="flex-1 min-w-[200px] space-y-2">
             <div>
               <Label className="text-xs">Manual secret</Label>

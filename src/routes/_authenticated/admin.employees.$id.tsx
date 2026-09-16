@@ -324,7 +324,7 @@ function EmployeeEdit() {
     <div className="p-6 md:p-8 max-w-7xl mx-auto space-y-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-2">
         <div className="flex items-center gap-3">
-          <Button variant="ghost" size="sm" onClick={() => navigate({ to: "/admin/employees" })} className="rounded-full hover:bg-slate-100">
+          <Button variant="ghost" size="sm" onClick={() => navigate({ to: "/admin/employees" })} className="rounded-full hover:bg-muted">
             <ArrowLeft className="w-4 h-4 mr-1" /> Back
           </Button>
           <div>
@@ -340,7 +340,7 @@ function EmployeeEdit() {
         <div className="space-y-6">
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="bg-slate-100/50 p-1 rounded-xl mb-6">
+          <TabsList className="bg-muted/40 p-1 rounded-xl mb-6">
             <TabsTrigger value="details" className="rounded-lg">Details</TabsTrigger>
             {!isNew && <TabsTrigger value="performance" className="rounded-lg">Performance</TabsTrigger>}
             {!isNew && isManagement && <TabsTrigger value="team" className="rounded-lg">Team</TabsTrigger>}
@@ -356,7 +356,7 @@ function EmployeeEdit() {
           </TabsList>
 
           <TabsContent value="details" className="space-y-6">
-            <Card className="rounded-2xl border-slate-200/60 shadow-sm">
+            <Card className="rounded-2xl border-border shadow-sm">
 
             <CardHeader><CardTitle className="text-base font-bold">Personal & Professional Details</CardTitle></CardHeader>
             <CardContent className="space-y-4">
@@ -405,7 +405,7 @@ function EmployeeEdit() {
                       ))}
                     </SelectContent>
                   </Select>
-                  <p className="text-[11px] text-slate-500">{COMPENSATION_HINTS[form.compensation_type]}</p>
+                  <p className="text-[11px] text-muted-foreground">{COMPENSATION_HINTS[form.compensation_type]}</p>
                 </div>
                 {form.compensation_type !== "commission_only" && (
                   <div className="space-y-2">
@@ -430,8 +430,8 @@ function EmployeeEdit() {
                   <Input id="device_info" value={form.device_info} onChange={(e) => setForm({ ...form, device_info: e.target.value })} placeholder="e.g. Samsung A55 - ID: 12345" />
                 </div>
                 
-                <div className="space-y-4 md:col-span-2 pt-4 border-t border-slate-100">
-                  <h3 className="text-sm font-bold flex items-center gap-2 text-slate-900">
+                <div className="space-y-4 md:col-span-2 pt-4 border-t border-border">
+                  <h3 className="text-sm font-bold flex items-center gap-2 text-foreground">
                     <MapPin className="w-4 h-4 text-brand-primary" /> Location & Assignment
                   </h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -457,8 +457,8 @@ function EmployeeEdit() {
 
                 </div>
 
-                <div className="space-y-4 md:col-span-2 pt-4 border-t border-slate-100">
-                   <h3 className="text-sm font-bold flex items-center gap-2 text-slate-900">
+                <div className="space-y-4 md:col-span-2 pt-4 border-t border-border">
+                   <h3 className="text-sm font-bold flex items-center gap-2 text-foreground">
                      <Users className="w-4 h-4 text-brand-primary" /> Reporting Structure
                    </h3>
                    <div className="space-y-2">
@@ -478,7 +478,7 @@ function EmployeeEdit() {
             </CardContent>
           </Card>
 
-          <Card className="rounded-2xl border-slate-200/60 shadow-sm">
+          <Card className="rounded-2xl border-border shadow-sm">
             <CardHeader><CardTitle className="text-base font-bold">Promotion & History</CardTitle></CardHeader>
             <CardContent className="space-y-4">
                <div className="space-y-4">
@@ -499,13 +499,13 @@ function EmployeeEdit() {
                     <p className="text-center text-xs text-muted-foreground py-4">No history records.</p>
                   ) : (
                     form.promotion_history.map((record: any, idx: number) => (
-                      <div key={idx} className="text-xs p-3 bg-slate-50 rounded-xl border border-slate-100">
+                      <div key={idx} className="text-xs p-3 bg-muted/60 rounded-xl border border-border">
                         <div className="flex justify-between font-bold mb-1">
                           <span>{record.role?.toUpperCase()}</span>
-                          <span className="font-mono text-slate-400">{record.date}</span>
+                          <span className="font-mono text-muted-foreground">{record.date}</span>
                         </div>
-                        <div className="text-slate-500">Salary: {formatPkr(record.salary)}</div>
-                        {record.notes && <div className="mt-1 italic text-slate-400">"{record.notes}"</div>}
+                        <div className="text-muted-foreground">Salary: {formatPkr(record.salary)}</div>
+                        {record.notes && <div className="mt-1 italic text-muted-foreground">"{record.notes}"</div>}
                       </div>
                     ))
                   )}
@@ -574,7 +574,7 @@ function EmployeeEdit() {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <Card className="rounded-2xl border-slate-200/60 shadow-sm">
+              <Card className="rounded-2xl border-border shadow-sm">
                 <CardHeader>
                   <CardTitle className="text-base font-bold">Key Performance Indicators</CardTitle>
                 </CardHeader>
@@ -598,21 +598,21 @@ function EmployeeEdit() {
                 </CardContent>
               </Card>
 
-              <Card className="rounded-2xl border-slate-200/60 shadow-sm">
+              <Card className="rounded-2xl border-border shadow-sm">
                 <CardHeader>
                   <CardTitle className="text-base font-bold">Promotion Path</CardTitle>
                 </CardHeader>
                 <CardContent className="flex flex-col items-center justify-center py-6 text-center">
-                  <div className="w-16 h-16 rounded-full bg-slate-50 flex items-center justify-center mb-4 border border-slate-100">
-                    <TrendingUp className="w-8 h-8 text-slate-300" />
+                  <div className="w-16 h-16 rounded-full bg-muted/60 flex items-center justify-center mb-4 border border-border">
+                    <TrendingUp className="w-8 h-8 text-muted-foreground/50" />
                   </div>
-                  <p className="text-sm font-bold text-slate-600">Next Role: {form.role === 'bdo' ? 'ASM' : form.role === 'asm' ? 'RSM' : 'Senior Management'}</p>
+                  <p className="text-sm font-bold text-muted-foreground">Next Role: {form.role === 'bdo' ? 'ASM' : form.role === 'asm' ? 'RSM' : 'Senior Management'}</p>
                   <p className="text-xs text-muted-foreground mt-1 max-w-[200px]">Maintain {">"}90% attainment for 3 consecutive months to qualify.</p>
                 </CardContent>
               </Card>
             </div>
 
-              <Card className="rounded-2xl border-slate-200/60 shadow-sm overflow-hidden">
+              <Card className="rounded-2xl border-border shadow-sm overflow-hidden">
                 <CardHeader>
                   <CardTitle className="text-sm font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
                     <TrendingUp className="w-4 h-4" /> Daily Activations
@@ -691,16 +691,16 @@ function EmployeeEdit() {
               />
 
 
-              <Card className="rounded-2xl border-slate-200/60 shadow-sm">
+              <Card className="rounded-2xl border-border shadow-sm">
                 <CardHeader>
                   <CardTitle className="text-base font-bold">Member Breakdown</CardTitle>
                 </CardHeader>
                 <CardContent className="p-0">
                   <div className="divide-y divide-slate-100">
                     {(teamPerf?.teamMembers ?? []).map((member: any) => (
-                      <div key={member.id} className="p-4 flex items-center justify-between hover:bg-slate-50 transition-colors">
+                      <div key={member.id} className="p-4 flex items-center justify-between hover:bg-muted/60 transition-colors">
                         <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center font-bold text-slate-600">
+                          <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center font-bold text-muted-foreground">
                             {member.name.charAt(0)}
                           </div>
                           <div>
@@ -728,7 +728,7 @@ function EmployeeEdit() {
 
         <TabsContent value="advances" className="space-y-6 focus-visible:outline-none">
           <div className="grid gap-6 md:grid-cols-3">
-            <Card className="md:col-span-2 rounded-2xl border-slate-200/60 shadow-sm">
+            <Card className="md:col-span-2 rounded-2xl border-border shadow-sm">
               <CardHeader className="flex flex-row items-center justify-between">
                 <div>
                   <CardTitle className="text-lg font-bold">Advance Payment History</CardTitle>
@@ -813,7 +813,7 @@ function EmployeeEdit() {
                     </div>
                   ) : (
                     (advances ?? []).map((adv: any) => (
-                      <div key={adv.id} className="p-4 flex items-center justify-between hover:bg-slate-50 transition-colors">
+                      <div key={adv.id} className="p-4 flex items-center justify-between hover:bg-muted/60 transition-colors">
                         <div className="flex items-center gap-4">
                           <div className={`w-10 h-10 rounded-full flex items-center justify-center ${adv.is_settled ? 'bg-emerald-50 text-emerald-600' : 'bg-orange-50 text-orange-600'}`}>
                             {adv.is_settled ? <CheckCircle2 className="w-5 h-5" /> : <History className="w-5 h-5" />}
@@ -823,7 +823,7 @@ function EmployeeEdit() {
                             <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
                               <span className="flex items-center gap-1"><Calendar className="w-3 h-3" /> {format(parseISO(adv.payment_date), "dd MMM yyyy")}</span>
                               {adv.repayment_amount > 0 && (
-                                <span className="bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded font-medium">Deducting {formatPkr(adv.repayment_amount)}/mo</span>
+                                <span className="bg-muted text-muted-foreground px-1.5 py-0.5 rounded font-medium">Deducting {formatPkr(adv.repayment_amount)}/mo</span>
                               )}
                               {adv.description && <span>• {adv.description}</span>}
                             </div>
@@ -857,7 +857,7 @@ function EmployeeEdit() {
                           <Button 
                             variant="ghost" 
                             size="icon" 
-                            className="text-slate-400 hover:text-red-500"
+                            className="text-muted-foreground hover:text-red-500"
                             onClick={() => {
                               if (confirm("Delete this advance record?")) {
                                 deleteAdv.mutate(adv.id);
@@ -875,23 +875,28 @@ function EmployeeEdit() {
             </Card>
 
             <div className="space-y-6">
-              <Card className="rounded-2xl border-slate-200/60 shadow-sm bg-slate-950 text-white">
+              {/* This card is always dark (bg-slate-950), in both themes, so its
+                  text cannot use the theme tokens the rest of the page uses:
+                  --muted-foreground is a mid-dark grey in light mode and would
+                  be unreadable here. Fixed white opacities instead, matching
+                  the border-white/10 dividers already inside it. */}
+              <Card className="rounded-2xl border-white/10 shadow-sm bg-slate-950 text-white">
                 <CardHeader>
-                  <CardTitle className="text-sm font-bold uppercase tracking-wider text-slate-500">Advance Summary</CardTitle>
+                  <CardTitle className="text-sm font-bold uppercase tracking-wider text-white/60">Advance Summary</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-6">
                   <div>
-                    <span className="text-xs text-slate-400 block mb-1">Total Outstanding</span>
+                    <span className="text-xs text-white/60 block mb-1">Total Outstanding</span>
                     <span className="text-3xl font-black">{formatPkr(pendingAdvanceTotal)}</span>
                   </div>
                   
                   {pendingAdvanceTotal > 0 && (
                     <div className="pt-4 border-t border-white/10">
-                      <span className="text-xs text-slate-400 block mb-2 font-bold uppercase tracking-tighter">Expected Next Deduction</span>
+                      <span className="text-xs text-white/60 block mb-2 font-bold uppercase tracking-tighter">Expected Next Deduction</span>
                       <div className="text-xl font-bold text-orange-400">
                         {formatPkr((advances ?? []).reduce((sum: number, a: any) => sum + (a.is_settled ? 0 : Number(a.repayment_amount || 0)), 0))}
                       </div>
-                      <p className="text-[10px] text-slate-500 mt-1">Sum of individual monthly repayment preferences</p>
+                      <p className="text-[10px] text-white/60 mt-1">Sum of individual monthly repayment preferences</p>
                     </div>
                   )}
 
@@ -903,7 +908,7 @@ function EmployeeEdit() {
                 </CardContent>
               </Card>
 
-              <Card className="rounded-2xl border-slate-200/60 shadow-sm border-l-4 border-l-brand-primary">
+              <Card className="rounded-2xl border-border shadow-sm border-l-4 border-l-brand-primary">
                 <CardHeader>
                   <CardTitle className="text-base font-bold">Quick Settlement</CardTitle>
                 </CardHeader>
@@ -922,9 +927,9 @@ function EmployeeEdit() {
             <DialogTitle>Settle Advance Payment</DialogTitle>
           </DialogHeader>
           <div className="grid gap-4 py-4">
-            <div className="p-4 rounded-xl bg-slate-50 border border-slate-100 space-y-1">
+            <div className="p-4 rounded-xl bg-muted/60 border border-border space-y-1">
               <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Original Amount</span>
-              <p className="font-bold text-lg text-slate-900">{formatPkr(settlementDialog.totalAmount)}</p>
+              <p className="font-bold text-lg text-foreground">{formatPkr(settlementDialog.totalAmount)}</p>
             </div>
             <div className="grid gap-2">
               <Label htmlFor="settle_amount">How much payment we need to settle? (PKR) *</Label>
@@ -965,18 +970,18 @@ function EmployeeEdit() {
 
 
         <div className="space-y-6">
-          <Card className="rounded-2xl border-slate-200/60 shadow-sm sticky top-6 overflow-hidden">
+          <Card className="rounded-2xl border-border shadow-sm sticky top-6 overflow-hidden">
             <div className="h-2 bg-gradient-to-r from-orange-500 to-red-600" />
             <CardHeader>
               <CardTitle className="text-sm font-bold uppercase tracking-wider text-muted-foreground">Quick Snapshot</CardTitle>
             </CardHeader>
             <CardContent className="space-y-6">
-              <div className="flex items-center gap-4 p-4 rounded-xl bg-slate-50 border border-slate-100">
-                <div className="w-12 h-12 rounded-full bg-white shadow-sm flex items-center justify-center font-black text-xl text-slate-800 border border-slate-200">
+              <div className="flex items-center gap-4 p-4 rounded-xl bg-muted/60 border border-border">
+                <div className="w-12 h-12 rounded-full bg-card shadow-sm flex items-center justify-center font-black text-xl text-foreground border border-border">
                   {form.name.charAt(0) || '?'}
                 </div>
                 <div className="min-w-0">
-                  <p className="font-bold truncate text-slate-900">{form.name || 'New Employee'}</p>
+                  <p className="font-bold truncate text-foreground">{form.name || 'New Employee'}</p>
                   <Badge className="text-[9px] font-black uppercase tracking-tighter mt-1">{form.role}</Badge>
                 </div>
               </div>
@@ -993,9 +998,9 @@ function EmployeeEdit() {
               </div>
 
               <div className="space-y-2">
-                <Label className="text-[11px] font-bold uppercase text-slate-500 tracking-tighter">Current Status</Label>
+                <Label className="text-[11px] font-bold uppercase text-muted-foreground tracking-tighter">Current Status</Label>
                 <Select value={form.status} onValueChange={(v) => setForm({ ...form, status: v })}>
-                  <SelectTrigger className="h-10 bg-white"><SelectValue /></SelectTrigger>
+                  <SelectTrigger className="h-10 bg-card"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="active">Active</SelectItem>
                     <SelectItem value="on_leave">On Leave</SelectItem>
@@ -1021,7 +1026,7 @@ function EmployeeEdit() {
                    </p>
                 )}
 
-                <Button variant="outline" className="w-full font-bold h-10 text-slate-500 hover:text-slate-900" onClick={() => navigate({ to: "/admin/employees" })}>
+                <Button variant="outline" className="w-full font-bold h-10 text-muted-foreground hover:text-foreground" onClick={() => navigate({ to: "/admin/employees" })}>
                   Cancel
                 </Button>
               </div>
@@ -1068,10 +1073,10 @@ function KPIItem({ label, value, progress, color = "bg-brand-primary" }: { label
   return (
     <div className="space-y-1.5">
       <div className="flex justify-between text-xs font-medium">
-        <span className="text-slate-500">{label}</span>
+        <span className="text-muted-foreground">{label}</span>
         <span className="font-bold">{value}</span>
       </div>
-      <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
+      <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden">
         <div 
           className={`h-full ${color} transition-all duration-500`} 
           style={{ width: `${progress}%` }}
@@ -1083,7 +1088,7 @@ function KPIItem({ label, value, progress, color = "bg-brand-primary" }: { label
 
 function StatCard({ label, value, icon: Icon, tone = "default", hint }: { label: string, value: string | number, icon: any, tone?: "default" | "success" | "warn", hint?: string }) {
   const toneClasses = {
-    default: "bg-slate-50 text-slate-600 border-slate-100",
+    default: "bg-muted/60 text-muted-foreground border-border",
     success: "bg-emerald-50 text-emerald-600 border-emerald-100",
     warn: "bg-orange-50 text-orange-600 border-orange-100",
   };
@@ -1091,7 +1096,7 @@ function StatCard({ label, value, icon: Icon, tone = "default", hint }: { label:
   return (
     <Card className={`rounded-2xl border ${toneClasses[tone]} shadow-sm overflow-hidden`}>
       <CardContent className="p-4 flex items-center gap-3">
-        <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${tone === 'default' ? 'bg-white shadow-sm' : 'bg-current/10'}`}>
+        <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${tone === 'default' ? 'bg-card shadow-sm' : 'bg-current/10'}`}>
           <Icon className="w-4 h-4" />
         </div>
         <div className="min-w-0">

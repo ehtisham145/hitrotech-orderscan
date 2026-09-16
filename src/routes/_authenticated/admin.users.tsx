@@ -181,15 +181,15 @@ function MembersPage() {
     <div className="p-6 md:p-8 max-w-6xl mx-auto space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border/40 pb-6">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight text-slate-900 leading-tight">Members</h1>
+          <h1 className="text-3xl font-bold tracking-tight text-foreground leading-tight">Members</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            People with access to <span className="font-semibold text-slate-900">{data?.workspace?.name ?? "HitroTech Telecom"}</span>.
+            People with access to <span className="font-semibold text-foreground">{data?.workspace?.name ?? "HitroTech Telecom"}</span>.
           </p>
         </div>
         <div className="flex items-center gap-4 flex-wrap sm:flex-nowrap">
           {billing && !seatsUnlimited && (
             <div className="hidden sm:block text-right">
-              <div className="text-sm font-semibold text-slate-900">
+              <div className="text-sm font-semibold text-foreground">
                 {billing.seatsUsed} / {billing.seatLimit}
               </div>
               <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-bold">
@@ -218,20 +218,20 @@ function MembersPage() {
               </DialogHeader>
               <div className="space-y-4 py-4">
                 <div className="space-y-2">
-                  <Label htmlFor="invite-email" className="text-xs font-bold uppercase tracking-wider text-slate-500">Email address</Label>
+                  <Label htmlFor="invite-email" className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Email address</Label>
                   <Input
                     id="invite-email"
                     type="email"
                     placeholder="name@hitrotech.com"
                     value={inviteEmail}
                     onChange={(e) => setInviteEmail(e.target.value)}
-                    className="rounded-2xl border-slate-200 focus:border-primary focus:ring-primary/20"
+                    className="rounded-2xl border-border focus:border-primary focus:ring-primary/20"
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="invite-role" className="text-xs font-bold uppercase tracking-wider text-slate-500">Workspace Role</Label>
+                  <Label htmlFor="invite-role" className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Workspace Role</Label>
                   <Select value={inviteRole} onValueChange={(v) => setInviteRole(v as Role)}>
-                    <SelectTrigger id="invite-role" className="rounded-2xl border-slate-200 focus:border-primary focus:ring-primary/20">
+                    <SelectTrigger id="invite-role" className="rounded-2xl border-border focus:border-primary focus:ring-primary/20">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent className="rounded-2xl">
