@@ -5,6 +5,7 @@ import { assertActiveWorkspaceRole } from "./authz.server";
 import { requireActiveWorkspaceId } from "./workspace-helpers";
 import { findSlabConflict, type SlabLike } from "./slab-validation";
 import type { PartnerRole } from "./partners.functions";
+import type { ServerContext } from "./server-context";
 
 const WRITE_ROLES = ["owner", "admin", "manager"] as const;
 
@@ -33,272 +34,321 @@ export type ActivationType = {
   sort_order: number;
 };
 
+export async function listActivationTypesCore(context: ServerContext) {
+  const wsId = await requireActiveWorkspaceId(context.supabase, context.userId);
+  const { data, error } = await context.supabase
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    .from("activation_types" as any)
+    .select("*")
+    .eq("workspace_id", wsId)
+    .order("sort_order", { ascending: true })
+    .order("name", { ascending: true });
+  // The table arrives with a migration; treat "not there yet" as "none configured".
+  if (error) {
+    if (/activation_types/i.test(error.message)) return [] as ActivationType[];
+    throw new Error(error.message);
+  }
+  return (data ?? []) as unknown as ActivationType[];
+}
+
 export const listActivationTypes = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
-    const wsId = await requireActiveWorkspaceId(context.supabase, context.userId);
-    const { data, error } = await context.supabase
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      .from("activation_types" as any)
-      .select("*")
-      .eq("workspace_id", wsId)
-      .order("sort_order", { ascending: true })
-      .order("name", { ascending: true });
-    // The table arrives with a migration; treat "not there yet" as "none configured".
-    if (error) {
-      if (/activation_types/i.test(error.message)) return [] as ActivationType[];
-      throw new Error(error.message);
-    }
-    return (data ?? []) as unknown as ActivationType[];
-  });
+  .handler(({ context }) => listActivationTypesCore(context));
+
+export async function upsertActivationTypeCore(data: { id?: string; name: string; code?: string | null; active?: boolean; sort_order?: number }, context: ServerContext) {
+  const wsId = await assertActiveWorkspaceRole(context.supabase, context.userId, [...WRITE_ROLES]);
+  const name = data.name.trim();
+  if (!name) throw new Error("Give the activation type a name.");
+  const payload = {
+    name,
+    code: data.code?.trim() || null,
+    active: data.active ?? true,
+    sort_order: data.sort_order ?? 0,
+    workspace_id: wsId,
+  };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const table = context.supabase.from("activation_types" as any);
+  const { error } = data.id
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ? await table.update(payload).eq("id", data.id).eq("workspace_id", wsId)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    : await table.insert(payload);
+  if (error) throw new Error(error.message);
+  return { ok: true };
+}
 
 export const upsertActivationType = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: { id?: string; name: string; code?: string | null; active?: boolean; sort_order?: number }) => input)
-  .handler(async ({ data, context }) => {
-    const wsId = await assertActiveWorkspaceRole(context.supabase, context.userId, [...WRITE_ROLES]);
-    const name = data.name.trim();
-    if (!name) throw new Error("Give the activation type a name.");
-    const payload = {
-      name,
-      code: data.code?.trim() || null,
-      active: data.active ?? true,
-      sort_order: data.sort_order ?? 0,
-      workspace_id: wsId,
-    };
+  .handler(({ data, context }) => upsertActivationTypeCore(data, context));
+
+export async function deleteActivationTypeCore(data: { id: string }, context: ServerContext) {
+  const wsId = await assertActiveWorkspaceRole(context.supabase, context.userId, [...WRITE_ROLES]);
+  const { error } = await context.supabase
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const table = context.supabase.from("activation_types" as any);
-    const { error } = data.id
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      ? await table.update(payload).eq("id", data.id).eq("workspace_id", wsId)
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      : await table.insert(payload);
-    if (error) throw new Error(error.message);
-    return { ok: true };
-  });
+    .from("activation_types" as any)
+    .delete()
+    .eq("workspace_id", wsId)
+    .eq("id", data.id);
+  if (error) throw new Error(error.message);
+  return { ok: true };
+}
 
 export const deleteActivationType = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: { id: string }) => input)
-  .handler(async ({ data, context }) => {
-    const wsId = await assertActiveWorkspaceRole(context.supabase, context.userId, [...WRITE_ROLES]);
-    const { error } = await context.supabase
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      .from("activation_types" as any)
-      .delete()
-      .eq("workspace_id", wsId)
-      .eq("id", data.id);
-    if (error) throw new Error(error.message);
-    return { ok: true };
-  });
+  .handler(({ data, context }) => deleteActivationTypeCore(data, context));
 
+
+export async function listSlabsCore(context: ServerContext) {
+  // Role-default slabs only (partner_id is NULL)
+  const wsId = await requireActiveWorkspaceId(context.supabase, context.userId);
+  const { data, error } = await context.supabase
+    .from("commission_slabs")
+    .select("*")
+    .eq("workspace_id", wsId)
+    .is("partner_id", null)
+    .order("role", { ascending: true })
+    .order("min_count", { ascending: true });
+  if (error) throw new Error(error.message);
+  return data ?? [];
+}
 
 export const listSlabs = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
-    // Role-default slabs only (partner_id is NULL)
-    const wsId = await requireActiveWorkspaceId(context.supabase, context.userId);
-    const { data, error } = await context.supabase
-      .from("commission_slabs")
-      .select("*")
-      .eq("workspace_id", wsId)
-      .is("partner_id", null)
-      .order("role", { ascending: true })
-      .order("min_count", { ascending: true });
-    if (error) throw new Error(error.message);
-    return data ?? [];
-  });
+  .handler(({ context }) => listSlabsCore(context));
+
+export async function listPartnerSlabsCore(data: { partner_id: string }, context: ServerContext) {
+  const wsId = await requireActiveWorkspaceId(context.supabase, context.userId);
+  const { data: rows, error } = await context.supabase
+    .from("commission_slabs")
+    .select("*")
+    .eq("workspace_id", wsId)
+    .eq("partner_id", data.partner_id)
+    .order("min_count", { ascending: true });
+  if (error) throw new Error(error.message);
+  return rows ?? [];
+}
 
 export const listPartnerSlabs = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: { partner_id: string }) => input)
-  .handler(async ({ data, context }) => {
-    const wsId = await requireActiveWorkspaceId(context.supabase, context.userId);
-    const { data: rows, error } = await context.supabase
-      .from("commission_slabs")
-      .select("*")
-      .eq("workspace_id", wsId)
-      .eq("partner_id", data.partner_id)
-      .order("min_count", { ascending: true });
-    if (error) throw new Error(error.message);
-    return rows ?? [];
-  });
+  .handler(({ data, context }) => listPartnerSlabsCore(data, context));
 
+
+export async function upsertSlabCore(data: SlabInput, context: ServerContext) {
+  const wsId = await assertActiveWorkspaceRole(context.supabase, context.userId, [...WRITE_ROLES]);
+
+  // The editor validates too, but this is the rule that actually holds.
+  {
+    // Scoped to this workspace. Without the filter the scan compared the new
+    // slab against every workspace's slabs for that role, so someone else's
+    // band could report a conflict that does not exist here — and a genuine
+    // overlap inside this workspace could be masked by it.
+    let siblings = context.supabase
+      .from("commission_slabs")
+      .select("id, min_count, max_count, rate_pkr, partner_id, activation_type_id, effective_from, effective_to")
+      .eq("workspace_id", wsId)
+      .eq("role", data.role);
+    siblings = data.partner_id
+      ? siblings.eq("partner_id", data.partner_id)
+      : siblings.is("partner_id", null);
+    const { data: rows } = await siblings;
+    const conflict = findSlabConflict(data, (rows ?? []) as unknown as SlabLike[]);
+    if (conflict) throw new Error(conflict);
+  }
+
+  if (data.id) {
+    const { id, ...rest } = data;
+    // Scoped by workspace as well as id — deleteSlabCore already did this, and
+    // an update reached by id alone left RLS as the only thing stopping an
+    // admin of one workspace editing another workspace's rate. `.select("id")`
+    // so a write that matches nothing is a failure rather than a silent no-op.
+    const { data: updated, error } = await context.supabase
+      .from("commission_slabs")
+      .update(rest)
+      .eq("workspace_id", wsId)
+      .eq("id", id)
+      .select("id");
+    if (error) throw new Error(error.message);
+    if (!updated?.length) throw new Error("Slab not found in this workspace");
+  } else {
+
+    // Resolve workspace_id (NOT NULL + required by RLS policy)
+    let workspace_id: string | null = null;
+    if (data.partner_id) {
+      const { data: p, error: pe } = await context.supabase
+        .from("partners")
+        .select("workspace_id")
+        .eq("id", data.partner_id)
+        .single();
+      if (pe) throw new Error(pe.message);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      workspace_id = (p as any)?.workspace_id ?? null;
+    }
+    if (!workspace_id) {
+      const { data: prof } = await context.supabase
+        .from("profiles")
+        .select("active_workspace_id")
+        .eq("id", context.userId)
+        .single();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      workspace_id = (prof as any)?.active_workspace_id ?? null;
+    }
+    if (!workspace_id) throw new Error("No workspace context found for slab.");
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { error } = await context.supabase.from("commission_slabs").insert({ ...data, workspace_id });
+    if (error) throw new Error(error.message);
+  }
+  return { ok: true };
+}
 
 export const upsertSlab = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: SlabInput) => input)
-  .handler(async ({ data, context }) => {
-    await assertActiveWorkspaceRole(context.supabase, context.userId, [...WRITE_ROLES]);
+  .handler(({ data, context }) => upsertSlabCore(data, context));
 
-    // The editor validates too, but this is the rule that actually holds.
-    {
-      let siblings = context.supabase
-        .from("commission_slabs")
-        .select("id, min_count, max_count, rate_pkr, partner_id, activation_type_id, effective_from, effective_to")
-        .eq("role", data.role);
-      siblings = data.partner_id
-        ? siblings.eq("partner_id", data.partner_id)
-        : siblings.is("partner_id", null);
-      const { data: rows } = await siblings;
-      const conflict = findSlabConflict(data, (rows ?? []) as unknown as SlabLike[]);
-      if (conflict) throw new Error(conflict);
-    }
-
-    if (data.id) {
-      const { id, ...rest } = data;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { error } = await context.supabase.from("commission_slabs").update(rest).eq("id", id);
-      if (error) throw new Error(error.message);
-    } else {
-
-      // Resolve workspace_id (NOT NULL + required by RLS policy)
-      let workspace_id: string | null = null;
-      if (data.partner_id) {
-        const { data: p, error: pe } = await context.supabase
-          .from("partners")
-          .select("workspace_id")
-          .eq("id", data.partner_id)
-          .single();
-        if (pe) throw new Error(pe.message);
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        workspace_id = (p as any)?.workspace_id ?? null;
-      }
-      if (!workspace_id) {
-        const { data: prof } = await context.supabase
-          .from("profiles")
-          .select("active_workspace_id")
-          .eq("id", context.userId)
-          .single();
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        workspace_id = (prof as any)?.active_workspace_id ?? null;
-      }
-      if (!workspace_id) throw new Error("No workspace context found for slab.");
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { error } = await context.supabase.from("commission_slabs").insert({ ...data, workspace_id });
-      if (error) throw new Error(error.message);
-    }
-    return { ok: true };
-  });
+export async function deleteSlabCore(data: { id: string }, context: ServerContext) {
+  const wsIdDel = await assertActiveWorkspaceRole(context.supabase, context.userId, [...WRITE_ROLES]);
+  const { error } = await context.supabase.from("commission_slabs").delete().eq("workspace_id", wsIdDel).eq("id", data.id);
+  if (error) throw new Error(error.message);
+  return { ok: true };
+}
 
 export const deleteSlab = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: { id: string }) => input)
-  .handler(async ({ data, context }) => {
-    const wsIdDel = await assertActiveWorkspaceRole(context.supabase, context.userId, [...WRITE_ROLES]);
-    const { error } = await context.supabase.from("commission_slabs").delete().eq("workspace_id", wsIdDel).eq("id", data.id);
-    if (error) throw new Error(error.message);
-    return { ok: true };
-  });
+  .handler(({ data, context }) => deleteSlabCore(data, context));
+
+export async function listUnassignedCore(context: ServerContext) {
+  const wsIdUnassigned = await requireActiveWorkspaceId(context.supabase, context.userId);
+  const { data, error } = await context.supabase
+    .from("extractions")
+    .select("id, customer_name, phone_number, employee_name, reference, branch_name, store_id, activation_date, created_at, batch_id")
+    .eq("workspace_id", wsIdUnassigned)
+    .eq("status", "success")
+    .eq("is_duplicate", false)
+    .is("partner_id", null)
+    .order("created_at", { ascending: false })
+    .limit(500);
+  if (error) throw new Error(error.message);
+  return data ?? [];
+}
 
 export const listUnassigned = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
-    const wsIdUnassigned = await requireActiveWorkspaceId(context.supabase, context.userId);
-    const { data, error } = await context.supabase
-      .from("extractions")
-      .select("id, customer_name, phone_number, employee_name, reference, branch_name, store_id, activation_date, created_at, batch_id")
-      .eq("workspace_id", wsIdUnassigned)
-      .eq("status", "success")
-      .eq("is_duplicate", false)
-      .is("partner_id", null)
-      .order("created_at", { ascending: false })
-      .limit(500);
-    if (error) throw new Error(error.message);
-    return data ?? [];
-  });
+  .handler(({ context }) => listUnassignedCore(context));
+
+export async function assignExtractionToPartnerCore(data: { extraction_id: string; partner_id: string; add_match_key?: string | null }, context: ServerContext) {
+  const wsId = await assertActiveWorkspaceRole(context.supabase, context.userId, [...WRITE_ROLES]);
+  const { data: partnerOwner } = await context.supabase
+    .from("partners").select("id").eq("workspace_id", wsId).eq("id", data.partner_id).maybeSingle();
+  if (!partnerOwner) throw new Error("Partner not found in this workspace");
+  const { data: ex } = await context.supabase
+    .from("extractions")
+    .select("activation_date_parsed")
+    .eq("workspace_id", wsId)
+    .eq("id", data.extraction_id)
+    .single();
+  const parsed = (ex as { activation_date_parsed?: string | null } | null)?.activation_date_parsed;
+  // Same normalisation as getCommissionSummaryCore, and for the same reason —
+  // these two have to agree on what "the commission month" means or an
+  // activation is filed under a month the summary never queries.
+  const monthStart = `${(parsed ?? new Date().toISOString()).slice(0, 7)}-01`;
+
+  const { error } = await context.supabase
+    .from("extractions")
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    .update({ partner_id: data.partner_id, commission_month: monthStart })
+    .eq("workspace_id", wsId)
+    .eq("id", data.extraction_id);
+  if (error) throw new Error(error.message);
+
+  if (data.add_match_key && data.add_match_key.trim()) {
+    const { data: p } = await context.supabase.from("partners").select("match_keys").eq("workspace_id", wsId).eq("id", data.partner_id).single();
+    const keys = new Set<string>(((p?.match_keys as string[] | null) ?? []).map((k) => k.trim()).filter(Boolean));
+    keys.add(data.add_match_key.trim());
+    // Was fire-and-forget: a failure here silently dropped the match key the
+    // user just asked to remember, and the call still reported ok.
+    const { error: keyErr } = await context.supabase
+      .from("partners")
+      .update({ match_keys: Array.from(keys) })
+      .eq("workspace_id", wsId)
+      .eq("id", data.partner_id);
+    if (keyErr) throw new Error(keyErr.message);
+  }
+  return { ok: true };
+}
 
 export const assignExtractionToPartner = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: { extraction_id: string; partner_id: string; add_match_key?: string | null }) => input)
-  .handler(async ({ data, context }) => {
-    const wsId = await assertActiveWorkspaceRole(context.supabase, context.userId, [...WRITE_ROLES]);
-    const { data: partnerOwner } = await context.supabase
-      .from("partners").select("id").eq("workspace_id", wsId).eq("id", data.partner_id).maybeSingle();
-    if (!partnerOwner) throw new Error("Partner not found in this workspace");
-    const { data: ex } = await context.supabase
-      .from("extractions")
-      .select("activation_date_parsed")
-      .eq("workspace_id", wsId)
-      .eq("id", data.extraction_id)
-      .single();
-    const parsed = (ex as { activation_date_parsed?: string | null } | null)?.activation_date_parsed;
-    const month = parsed ? parsed : new Date().toISOString().slice(0, 10);
-    const monthStart = month.slice(0, 8) + "01";
+  .handler(({ data, context }) => assignExtractionToPartnerCore(data, context));
 
-    const { error } = await context.supabase
-      .from("extractions")
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      .update({ partner_id: data.partner_id, commission_month: monthStart })
-      .eq("workspace_id", wsId)
-      .eq("id", data.extraction_id);
-    if (error) throw new Error(error.message);
+export async function getCommissionSummaryCore(data: { month?: string }, context: ServerContext) {
+  // Take the YYYY-MM part and append the day, rather than slicing 8 characters
+  // and appending "01". The old form assumed the input always had a day in it:
+  // given "2026-09" — which is exactly what a parameter called `month` invites
+  // — slice(0, 8) returns the whole 7-character string and the result was
+  // "2026-0901", an invalid date that matches no commission_month at all, so
+  // the summary came back empty with no error. Today's only caller passes no
+  // month and takes the default path, which is why it has not bitten yet.
+  const monthStart = `${(data.month ?? new Date().toISOString()).slice(0, 7)}-01`;
+  const wsId = await requireActiveWorkspaceId(context.supabase, context.userId);
 
-    if (data.add_match_key && data.add_match_key.trim()) {
-      const { data: p } = await context.supabase.from("partners").select("match_keys").eq("workspace_id", wsId).eq("id", data.partner_id).single();
-      const keys = new Set<string>(((p?.match_keys as string[] | null) ?? []).map((k) => k.trim()).filter(Boolean));
-      keys.add(data.add_match_key.trim());
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await context.supabase.from("partners").update({ match_keys: Array.from(keys) }).eq("workspace_id", wsId).eq("id", data.partner_id);
-    }
-    return { ok: true };
+  const [{ data: rows }, { count: unassigned }, { data: partners }] = await Promise.all([
+    context.supabase
+      .from("extractions")
+      .select("partner_id, commission_amount")
+      .eq("workspace_id", wsId)
+      .eq("status", "success")
+      .eq("is_duplicate", false)
+      .eq("commission_month", monthStart)
+      .not("partner_id", "is", null),
+    context.supabase
+      .from("extractions")
+      .select("id", { count: "exact", head: true })
+      .eq("workspace_id", wsId)
+      .eq("status", "success")
+      .eq("is_duplicate", false)
+      .is("partner_id", null),
+    context.supabase.from("partners").select("id, name, role, store_id").eq("workspace_id", wsId),
+  ]);
+
+  const partnerMap = new Map<string, { name: string; role: string; store_id: string | null }>();
+  (partners ?? []).forEach((p) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const rr = p as any;
+    partnerMap.set(rr.id, { name: rr.name, role: rr.role, store_id: rr.store_id });
   });
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const list = (rows ?? []) as any[];
+  const byPartner = new Map<string, { count: number; commission: number }>();
+  let total = 0;
+  for (const r of list) {
+    const entry = byPartner.get(r.partner_id) ?? { count: 0, commission: 0 };
+    entry.count += 1;
+    entry.commission += r.commission_amount ?? 0;
+    byPartner.set(r.partner_id, entry);
+    total += r.commission_amount ?? 0;
+  }
+
+  const leaderboard = Array.from(byPartner.entries())
+    .map(([id, v]) => ({ id, ...v, ...partnerMap.get(id) }))
+    .sort((a, b) => b.commission - a.commission);
+
+  return {
+    month: monthStart,
+    total_commission: total,
+    total_activations: list.length,
+    top_earner: leaderboard[0] ?? null,
+    unassigned_count: unassigned ?? 0,
+    leaderboard,
+  };
+}
 
 export const getCommissionSummary = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: { month?: string }) => input)
-  .handler(async ({ data, context }) => {
-    const monthStart = (data.month ?? new Date().toISOString().slice(0, 8) + "01").slice(0, 8) + "01";
-    const wsId = await requireActiveWorkspaceId(context.supabase, context.userId);
-
-    const [{ data: rows }, { count: unassigned }, { data: partners }] = await Promise.all([
-      context.supabase
-        .from("extractions")
-        .select("partner_id, commission_amount")
-        .eq("workspace_id", wsId)
-        .eq("status", "success")
-        .eq("is_duplicate", false)
-        .eq("commission_month", monthStart)
-        .not("partner_id", "is", null),
-      context.supabase
-        .from("extractions")
-        .select("id", { count: "exact", head: true })
-        .eq("workspace_id", wsId)
-        .eq("status", "success")
-        .eq("is_duplicate", false)
-        .is("partner_id", null),
-      context.supabase.from("partners").select("id, name, role, store_id").eq("workspace_id", wsId),
-    ]);
-
-    const partnerMap = new Map<string, { name: string; role: string; store_id: string | null }>();
-    (partners ?? []).forEach((p) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const rr = p as any;
-      partnerMap.set(rr.id, { name: rr.name, role: rr.role, store_id: rr.store_id });
-    });
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const list = (rows ?? []) as any[];
-    const byPartner = new Map<string, { count: number; commission: number }>();
-    let total = 0;
-    for (const r of list) {
-      const entry = byPartner.get(r.partner_id) ?? { count: 0, commission: 0 };
-      entry.count += 1;
-      entry.commission += r.commission_amount ?? 0;
-      byPartner.set(r.partner_id, entry);
-      total += r.commission_amount ?? 0;
-    }
-
-    const leaderboard = Array.from(byPartner.entries())
-      .map(([id, v]) => ({ id, ...v, ...partnerMap.get(id) }))
-      .sort((a, b) => b.commission - a.commission);
-
-    return {
-      month: monthStart,
-      total_commission: total,
-      total_activations: list.length,
-      top_earner: leaderboard[0] ?? null,
-      unassigned_count: unassigned ?? 0,
-      leaderboard,
-    };
-  });
+  .handler(({ data, context }) => getCommissionSummaryCore(data, context));
