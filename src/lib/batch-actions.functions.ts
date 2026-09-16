@@ -4,13 +4,21 @@ import { requireSupabaseAuth } from "@/integrations/supabase/ext-auth-middleware
 import { z } from "zod";
 import type { Database } from "@/integrations/supabase/types";
 
+// A generous safety cap, not a real product limit — matches MAX_FILES in
+// batches.new.tsx. That client-side check is the friendlier, faster one;
+// this is the one that actually can't be bypassed (a direct call to this
+// server function skips the UI entirely). See its comment for why this
+// number: an oversized batch floods the OCR/AI pipeline's per-minute rate
+// limits far worse than a normal bulk upload does.
+const MAX_BATCH_FILES = 150;
+
 const inputSchema = z.object({
   name: z.string().min(1),
   workspace_id: z.string().uuid(),
   files: z.array(z.object({
     name: z.string(),
     type: z.string(),
-  })),
+  })).max(MAX_BATCH_FILES, `A single batch can have at most ${MAX_BATCH_FILES} images — split this into smaller batches.`),
   defaults: z.object({
     store_id: z.string().optional().nullable(),
     employee_name: z.string().optional().nullable(),
