@@ -29,19 +29,27 @@ export function StatCard({
   loading?: boolean;
   tone?: "default" | "success" | "danger" | "warn" | "muted";
 }) {
+  // The fixed emerald/amber shades are dark enough to read on a white card but
+  // muddy on a near-black one, so each gets a lighter dark-mode counterpart.
+  // The rest are already theme tokens and flip on their own.
   const toneCfg = {
     default: { text: "text-foreground", chip: "bg-primary/10 text-primary" },
-    success: { text: "text-emerald-600", chip: "bg-emerald-500/10 text-emerald-600" },
+    success: { text: "text-emerald-600 dark:text-emerald-400", chip: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" },
     danger: { text: "text-destructive", chip: "bg-destructive/10 text-destructive" },
-    warn: { text: "text-amber-600", chip: "bg-amber-500/10 text-amber-600" },
+    warn: { text: "text-amber-600 dark:text-amber-400", chip: "bg-amber-500/10 text-amber-600 dark:text-amber-400" },
     muted: { text: "text-foreground", chip: "bg-muted text-muted-foreground" },
   }[tone];
   return (
-    <Card className="rounded-2xl border border-slate-200/50 bg-white shadow-[0_2px_12px_-4px_rgba(0,0,0,0.04)] transition-transform hover:-translate-y-0.5">
+    <Card className="rounded-2xl border border-border bg-card shadow-[0_2px_12px_-4px_rgba(0,0,0,0.04)] transition-transform hover:-translate-y-0.5">
       <CardContent className="pt-6">
-        <div className="flex items-center justify-between mb-3">
-          <div className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{label}</div>
-          <div className={`h-8 w-8 rounded-2xl grid place-items-center ${toneCfg.chip}`}>
+        {/* items-start, not items-center: a label that wraps to two lines should
+            keep the icon pinned to the top rather than drifting down beside it.
+            shrink-0 on the chip and min-w-0 on the label are what stop a single
+            long word — "PROCESSING" is the one that showed it — from running
+            underneath the icon instead of wrapping. */}
+        <div className="flex items-start justify-between gap-2 mb-3">
+          <div className="min-w-0 break-words text-xs font-medium text-muted-foreground uppercase tracking-wider">{label}</div>
+          <div className={`h-8 w-8 shrink-0 rounded-2xl grid place-items-center ${toneCfg.chip}`}>
             <Icon className="w-4 h-4" />
           </div>
         </div>
@@ -157,7 +165,7 @@ export function CategoryHalfDonut({ title, data, offset = 0, palette = PIE_PALET
   const bigs = slices.filter((s) => s.pct >= bigThreshold);
 
   return (
-    <Card className="rounded-2xl border border-slate-200/50 bg-white shadow-[0_2px_12px_-4px_rgba(0,0,0,0.04)]">
+    <Card className="rounded-2xl border border-border bg-card shadow-[0_2px_12px_-4px_rgba(0,0,0,0.04)]">
       <CardHeader><CardTitle className="text-base font-semibold text-foreground">{title}</CardTitle></CardHeader>
       <CardContent className="h-[22rem] p-3">
         <div className="relative h-full w-full">
@@ -297,7 +305,7 @@ export function CategoryExplodedPie({ title, data, offset = 0, palette = PIE_PAL
   const gradId = (i: number) => `netgrad-${i}`;
 
   return (
-    <Card className="rounded-2xl border border-slate-200/50 bg-white shadow-[0_2px_12px_-4px_rgba(0,0,0,0.04)]">
+    <Card className="rounded-2xl border border-border bg-card shadow-[0_2px_12px_-4px_rgba(0,0,0,0.04)]">
       <CardHeader><CardTitle className="text-base font-semibold text-foreground">{title}</CardTitle></CardHeader>
       <CardContent className="relative pb-3">
         <div className="flex justify-center">
@@ -445,7 +453,7 @@ export function renderDonutCalloutLabel(palette: string[], offset: number) {
 export function CategoryRingedPie({ title, data, offset = 0, palette = PIE_PALETTE }: { title: string; data: { name: string; count: number }[]; offset?: number; palette?: string[] }) {
   const total = data.reduce((a, b) => a + b.count, 0);
   return (
-    <Card className="rounded-2xl border border-slate-200/50 bg-white shadow-[0_2px_12px_-4px_rgba(0,0,0,0.04)]">
+    <Card className="rounded-2xl border border-border bg-card shadow-[0_2px_12px_-4px_rgba(0,0,0,0.04)]">
       <CardHeader><CardTitle className="text-base font-semibold text-slate-800">{title}</CardTitle></CardHeader>
       <CardContent className="h-64 relative">
         <ResponsiveContainer width="100%" height="100%">
@@ -517,7 +525,7 @@ export function CategoryPictorial({ title, data, palette = PIE_PALETTE }: { titl
     color: palette[i % palette.length],
   }));
   return (
-    <Card className="rounded-2xl border border-slate-200/50 bg-white shadow-[0_2px_12px_-4px_rgba(0,0,0,0.04)]">
+    <Card className="rounded-2xl border border-border bg-card shadow-[0_2px_12px_-4px_rgba(0,0,0,0.04)]">
       <CardHeader><CardTitle className="text-base font-semibold text-slate-800">{title}</CardTitle></CardHeader>
       <CardContent>
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-5">
@@ -578,7 +586,7 @@ export function CategoryLegendDonut({ title, data, offset = 0, palette = PIE_PAL
   const smalls = rows.filter((r) => r.pct < 8);
   const singleDominant = rows.length === 1 || (rows[0]?.pct ?? 0) >= 90;
   return (
-    <Card className="rounded-2xl border border-slate-200/50 bg-white shadow-[0_2px_12px_-4px_rgba(0,0,0,0.04)]">
+    <Card className="rounded-2xl border border-border bg-card shadow-[0_2px_12px_-4px_rgba(0,0,0,0.04)]">
       <CardHeader><CardTitle className="text-base font-semibold text-slate-800">{title}</CardTitle></CardHeader>
       <CardContent className="h-64 relative">
         <div className="grid grid-cols-[auto_1fr] gap-3 h-full items-center">
@@ -657,7 +665,7 @@ export function CategorySimDonut({ title, data, palette = PIE_PALETTE }: { title
     return { name: d.name, count: d.count, pct: Math.round(frac * 100), len, offset };
   });
   return (
-    <Card className="rounded-2xl border border-slate-200/50 bg-white shadow-[0_2px_12px_-4px_rgba(0,0,0,0.04)]">
+    <Card className="rounded-2xl border border-border bg-card shadow-[0_2px_12px_-4px_rgba(0,0,0,0.04)]">
       <CardHeader><CardTitle className="text-base font-semibold text-slate-800">{title}</CardTitle></CardHeader>
       <CardContent className="h-80 relative flex flex-col">
         <div className="flex-1 min-h-0 relative flex items-center justify-center">
@@ -722,7 +730,7 @@ export function CategoryPie({ title, data, offset = 0, palette = PIE_PALETTE }: 
   const total = data.reduce((a, b) => a + b.count, 0);
   const trackData = [{ name: "_track", count: 1 }];
   return (
-    <Card className="rounded-2xl border border-slate-200/50 bg-white shadow-[0_2px_12px_-4px_rgba(0,0,0,0.04)]">
+    <Card className="rounded-2xl border border-border bg-card shadow-[0_2px_12px_-4px_rgba(0,0,0,0.04)]">
       <CardHeader><CardTitle className="text-base font-semibold text-slate-800">{title}</CardTitle></CardHeader>
       <CardContent className="h-80 relative flex flex-col">
         <div className="flex-1 min-h-0 relative">
@@ -790,7 +798,7 @@ export function CategoryPie({ title, data, offset = 0, palette = PIE_PALETTE }: 
 export function CategoryBar({ title, data, offset = 0, palette = BAR_PALETTE }: { title: string; data: { name: string; count: number }[]; offset?: number; palette?: string[] }) {
   const total = data.reduce((a, b) => a + b.count, 0);
   return (
-    <Card className="rounded-2xl border border-slate-200/50 bg-white shadow-[0_2px_12px_-4px_rgba(0,0,0,0.04)]">
+    <Card className="rounded-2xl border border-border bg-card shadow-[0_2px_12px_-4px_rgba(0,0,0,0.04)]">
       <CardHeader><CardTitle className="text-base font-semibold text-slate-800">{title}</CardTitle></CardHeader>
       <CardContent className="h-64 relative">
         <ResponsiveContainer width="100%" height="85%">
@@ -840,7 +848,7 @@ export function CategoryRadial({ title, data, offset = 0, palette = PIE_PALETTE 
     );
   };
   return (
-    <Card className="rounded-2xl border border-slate-200/50 bg-white shadow-[0_2px_12px_-4px_rgba(0,0,0,0.04)]">
+    <Card className="rounded-2xl border border-border bg-card shadow-[0_2px_12px_-4px_rgba(0,0,0,0.04)]">
       <CardHeader><CardTitle className="text-base font-semibold text-slate-800">{title}</CardTitle></CardHeader>
       <CardContent className="h-64 relative">
         <ResponsiveContainer width="100%" height="100%">
@@ -893,7 +901,7 @@ export function CategoryRadial({ title, data, offset = 0, palette = PIE_PALETTE 
 export function CategoryTreemap({ title, data, offset = 0, palette = BAR_PALETTE }: { title: string; data: { name: string; count: number }[]; offset?: number; palette?: string[] }) {
   const rows = data.map((d, i) => ({ name: d.name, size: d.count, fill: gradFor(palette[(i + offset) % palette.length]) }));
   return (
-    <Card className="rounded-2xl border border-slate-200/50 bg-white shadow-[0_2px_12px_-4px_rgba(0,0,0,0.04)]">
+    <Card className="rounded-2xl border border-border bg-card shadow-[0_2px_12px_-4px_rgba(0,0,0,0.04)]">
       <CardHeader><CardTitle className="text-base font-semibold text-slate-800">{title}</CardTitle></CardHeader>
       <CardContent className="h-64 relative">
         <ResponsiveContainer width="100%" height="100%">
@@ -930,7 +938,7 @@ export function CategoryDonut({ title, data, offset = 0, palette = PIE_PALETTE }
   }));
   const top = rows[0];
   return (
-    <Card className="rounded-2xl border border-slate-200/50 bg-white shadow-[0_2px_12px_-4px_rgba(0,0,0,0.04)]">
+    <Card className="rounded-2xl border border-border bg-card shadow-[0_2px_12px_-4px_rgba(0,0,0,0.04)]">
       <CardHeader><CardTitle className="text-base font-semibold text-slate-800">{title}</CardTitle></CardHeader>
       <CardContent className="h-64 relative">
         <ResponsiveContainer width="100%" height="100%">
@@ -972,7 +980,7 @@ export function CategoryDonut({ title, data, offset = 0, palette = PIE_PALETTE }
 export function CategoryColumn({ title, data, offset = 0, palette = BAR_PALETTE }: CatProps) {
   const total = data.reduce((a, b) => a + b.count, 0);
   return (
-    <Card className="rounded-2xl border border-slate-200/50 bg-white shadow-[0_2px_12px_-4px_rgba(0,0,0,0.04)]">
+    <Card className="rounded-2xl border border-border bg-card shadow-[0_2px_12px_-4px_rgba(0,0,0,0.04)]">
       <CardHeader><CardTitle className="text-base font-semibold text-slate-800">{title}</CardTitle></CardHeader>
       <CardContent className="h-64 relative">
         <ResponsiveContainer width="100%" height="100%">
@@ -995,7 +1003,7 @@ export function CategoryRadar({ title, data, offset = 0, palette = PIE_PALETTE }
   const total = data.reduce((a, b) => a + b.count, 0);
   const accent = palette[offset % palette.length];
   return (
-    <Card className="rounded-2xl border border-slate-200/50 bg-white shadow-[0_2px_12px_-4px_rgba(0,0,0,0.04)]">
+    <Card className="rounded-2xl border border-border bg-card shadow-[0_2px_12px_-4px_rgba(0,0,0,0.04)]">
       <CardHeader><CardTitle className="text-base font-semibold text-slate-800">{title}</CardTitle></CardHeader>
       <CardContent className="h-64 relative">
         <ResponsiveContainer width="100%" height="100%">
@@ -1019,7 +1027,7 @@ export function CategoryFunnel({ title, data, offset = 0, palette = BAR_PALETTE 
     .sort((a, b) => b.count - a.count)
     .map((d, i) => ({ name: d.name, value: d.count, fill: gradFor(palette[(i + offset) % palette.length]) }));
   return (
-    <Card className="rounded-2xl border border-slate-200/50 bg-white shadow-[0_2px_12px_-4px_rgba(0,0,0,0.04)]">
+    <Card className="rounded-2xl border border-border bg-card shadow-[0_2px_12px_-4px_rgba(0,0,0,0.04)]">
       <CardHeader><CardTitle className="text-base font-semibold text-slate-800">{title}</CardTitle></CardHeader>
       <CardContent className="h-64 relative">
         <ResponsiveContainer width="100%" height="100%">

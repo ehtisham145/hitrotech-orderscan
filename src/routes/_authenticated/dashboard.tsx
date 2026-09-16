@@ -240,7 +240,7 @@ function Dashboard() {
 
 
       {/* Extraction pipeline health */}
-      <Card className="rounded-2xl border-slate-200/60 shadow-sm">
+      <Card className="rounded-2xl border-border shadow-sm">
         <CardHeader className="pb-4 flex flex-row items-center justify-between gap-4 flex-wrap">
           <div>
             <CardTitle className="text-base font-bold tracking-tight">Extraction pipeline</CardTitle>
@@ -321,7 +321,7 @@ function Dashboard() {
 
         if (s) {
           overviewCards.push(
-            <Card key="ext" className="min-h-[360px] flex flex-col rounded-2xl border-slate-200/60 shadow-sm">
+            <Card key="ext" className="min-h-[360px] flex flex-col rounded-2xl border-border shadow-sm">
               <CardHeader className="pb-2">
                 <CardTitle className="text-base font-semibold text-foreground">Extractions</CardTitle>
                 <p className="text-xs text-muted-foreground">Status breakdown — {rangeLabel.toLowerCase()}</p>
@@ -401,7 +401,7 @@ function Dashboard() {
             <BusinessKpiCharts />
             {chartGrid([...overviewCards, ...networkCards, ...partnerCards, ...qualityCards])}
 
-            <Card className="rounded-2xl border-slate-200/60 shadow-sm">
+            <Card className="rounded-2xl border-border shadow-sm">
               <CardHeader>
                 <CardTitle className="text-base">Recent batches</CardTitle>
               </CardHeader>
@@ -457,7 +457,7 @@ function RecentActivityCard() {
   });
   const events = data ?? [];
   return (
-    <Card className="rounded-2xl border-slate-200/60 shadow-sm">
+    <Card className="rounded-2xl border-border shadow-sm">
       <CardHeader className="flex flex-row items-center justify-between">
         <CardTitle className="text-base">Recent activity</CardTitle>
         <Link to="/admin/audit" className="text-xs text-primary hover:underline">View all</Link>
@@ -502,7 +502,7 @@ function CommissionTiles() {
   const monthLabel = data?.month ? format(new Date(data.month), "MMMM yyyy") : format(new Date(), "MMMM yyyy");
   return (
     <div className="grid gap-4 h-full sm:grid-cols-5">
-      <Card className="sm:col-span-3 relative overflow-hidden rounded-2xl border-slate-200/60 shadow-sm">
+      <Card className="sm:col-span-3 relative overflow-hidden rounded-2xl border-border shadow-sm">
         <div className="absolute -top-8 -right-8 h-32 w-32 rounded-full bg-primary/10 pointer-events-none" />
         <CardContent className="pt-6 pb-6 relative">
           <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500/80">Commission · {monthLabel}</div>
@@ -517,7 +517,7 @@ function CommissionTiles() {
           </div>
         </CardContent>
       </Card>
-      <Card className="sm:col-span-2 rounded-2xl border-slate-200/60 shadow-sm">
+      <Card className="sm:col-span-2 rounded-2xl border-border shadow-sm">
         <CardContent className="pt-6 pb-6 h-full flex flex-col items-center justify-center text-center">
           <div className="relative">
             <div
@@ -528,7 +528,7 @@ function CommissionTiles() {
                 padding: 3,
               }}
             >
-              <div className="h-full w-full rounded-2xl bg-white grid place-items-center">
+              <div className="h-full w-full rounded-2xl bg-card grid place-items-center">
                 <span className="font-display text-2xl font-bold text-foreground">
                   {(data?.top_earner?.name ?? "—").slice(0, 1).toUpperCase()}
                 </span>
@@ -568,7 +568,7 @@ function QualitySnapshotCard({ s }: { s: StatsShape }) {
     { label: "Failed", value: s.failed, color: "#ef4444" },
   ];
   return (
-    <Card className="rounded-2xl border-slate-200/60 shadow-sm flex flex-col h-full">
+    <Card className="rounded-2xl border-border shadow-sm flex flex-col h-full">
       <CardHeader className="pb-2">
         <CardTitle className="text-base font-bold text-foreground">Data quality</CardTitle>
         <p className="text-xs text-muted-foreground">Accuracy and exceptions in range</p>
@@ -611,7 +611,7 @@ function ThroughputCard({ s, label }: { s: StatsShape; label: string }) {
   const data = s.series.slice(-14);
   const max = Math.max(1, ...data.map((d) => d.total));
   return (
-    <Card className="rounded-2xl border-slate-200/60 shadow-sm flex flex-col h-full">
+    <Card className="rounded-2xl border-border shadow-sm flex flex-col h-full">
       <CardHeader className="pb-2">
         <CardTitle className="text-base font-bold text-foreground">Extraction throughput</CardTitle>
         <p className="text-xs text-muted-foreground">Orders per day — {label}</p>
