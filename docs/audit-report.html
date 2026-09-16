@@ -1,0 +1,519 @@
+<title>OrderScan Backend Audit</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=JetBrains+Mono:wght@400;500;700&display=swap">
+
+<style>
+  :root {
+    --ground: #f4f6f7;
+    --surface: #ffffff;
+    --ink: #141a21;
+    --muted: #636d78;
+    --rule: #dbe0e5;
+    --rule-strong: #b9c1c9;
+    --flag: #a92a1d;
+    --flag-bg: #fbeceb;
+    --pass: #15604a;
+    --pass-bg: #e7f2ee;
+    --warn: #8a5a08;
+    --warn-bg: #fbf1de;
+
+    --display: "Archivo", "Helvetica Neue", Arial, sans-serif;
+    --body: "Source Serif 4", Georgia, "Times New Roman", serif;
+    --mono: "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #0e1216;
+      --surface: #161b21;
+      --ink: #e6ebf0;
+      --muted: #97a1ac;
+      --rule: #262d35;
+      --rule-strong: #3a434d;
+      --flag: #e8796d;
+      --flag-bg: #2a1614;
+      --pass: #5cbb9a;
+      --pass-bg: #10241e;
+      --warn: #d9a441;
+      --warn-bg: #26200f;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --ground: #0e1216;
+    --surface: #161b21;
+    --ink: #e6ebf0;
+    --muted: #97a1ac;
+    --rule: #262d35;
+    --rule-strong: #3a434d;
+    --flag: #e8796d;
+    --flag-bg: #2a1614;
+    --pass: #5cbb9a;
+    --pass-bg: #10241e;
+    --warn: #d9a441;
+    --warn-bg: #26200f;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--body);
+    font-size: 16.5px;
+    line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .sheet {
+    max-width: 940px;
+    margin: 0 auto;
+    padding: 56px 28px 96px;
+  }
+
+  /* ---- masthead ---- */
+  .masthead { border-bottom: 3px solid var(--ink); padding-bottom: 20px; }
+  .kicker {
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  h1 {
+    font-family: var(--display);
+    font-weight: 700;
+    font-size: clamp(34px, 6vw, 52px);
+    line-height: 1.05;
+    letter-spacing: -0.022em;
+    margin: 10px 0 12px;
+    text-wrap: balance;
+  }
+  .standfirst {
+    font-size: 19px;
+    color: var(--muted);
+    max-width: 60ch;
+    margin: 0;
+  }
+  .meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 22px;
+    margin-top: 22px;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .meta b { color: var(--ink); font-weight: 500; }
+
+  /* ---- counters ---- */
+  .tally {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 1px;
+    background: var(--rule);
+    border: 1px solid var(--rule);
+    margin: 34px 0 8px;
+  }
+  .tally div { background: var(--surface); padding: 18px 20px; }
+  .tally .n {
+    font-family: var(--display);
+    font-weight: 700;
+    font-size: 36px;
+    line-height: 1;
+    letter-spacing: -0.02em;
+    font-variant-numeric: tabular-nums;
+    display: block;
+  }
+  .tally .l {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-top: 9px;
+    display: block;
+  }
+  .tally .flagged .n { color: var(--flag); }
+  .tally .passed .n { color: var(--pass); }
+
+  /* ---- sections ---- */
+  section { margin-top: 52px; }
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--muted);
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--rule-strong);
+    margin-bottom: 26px;
+  }
+  h2 {
+    font-family: var(--display);
+    font-weight: 600;
+    font-size: 27px;
+    letter-spacing: -0.015em;
+    margin: 0 0 14px;
+    text-wrap: balance;
+  }
+  h3 {
+    font-family: var(--display);
+    font-weight: 600;
+    font-size: 17px;
+    letter-spacing: -0.005em;
+    margin: 0 0 6px;
+  }
+  p { max-width: 68ch; margin: 0 0 16px; }
+  .lede { font-size: 17.5px; }
+
+  /* ---- defect register ---- */
+  .register { display: flex; flex-direction: column; gap: 1px; background: var(--rule); border: 1px solid var(--rule); }
+  .entry {
+    background: var(--surface);
+    padding: 22px 24px 22px 22px;
+    border-left: 4px solid var(--flag);
+    display: grid;
+    grid-template-columns: 46px 1fr;
+    gap: 4px 16px;
+  }
+  .entry.calm { border-left-color: var(--warn); }
+  .entry .id {
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--muted);
+    padding-top: 3px;
+    font-variant-numeric: tabular-nums;
+  }
+  .entry .head { grid-column: 2; }
+  .entry .body { grid-column: 2; }
+  .entry p { margin: 0 0 10px; font-size: 15.5px; }
+  .entry p:last-child { margin-bottom: 0; }
+  .where {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    color: var(--muted);
+    margin-bottom: 10px;
+    display: block;
+  }
+  .impact {
+    display: inline-block;
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 3px 9px;
+    border-radius: 2px;
+    background: var(--flag-bg);
+    color: var(--flag);
+    margin-bottom: 10px;
+  }
+  .impact.warn { background: var(--warn-bg); color: var(--warn); }
+
+  /* ---- grouped list ---- */
+  .group { border: 1px solid var(--rule); background: var(--surface); padding: 22px 24px; margin-bottom: 18px; }
+  .group h3 { margin-bottom: 10px; }
+  .group ul { margin: 0; padding-left: 20px; }
+  .group li { margin-bottom: 8px; font-size: 15.5px; }
+  .group li:last-child { margin-bottom: 0; }
+  .group li b { font-weight: 600; }
+
+  /* ---- table ---- */
+  .scroller { overflow-x: auto; border: 1px solid var(--rule); background: var(--surface); }
+  table { border-collapse: collapse; width: 100%; font-size: 14.5px; min-width: 520px; }
+  th, td { text-align: left; padding: 11px 16px; border-bottom: 1px solid var(--rule); }
+  th {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+    background: var(--ground);
+  }
+  tr:last-child td { border-bottom: none; }
+  td.num { font-family: var(--mono); font-variant-numeric: tabular-nums; text-align: right; }
+  td.file { font-family: var(--mono); font-size: 13px; }
+
+  code {
+    font-family: var(--mono);
+    font-size: 0.88em;
+    background: var(--ground);
+    border: 1px solid var(--rule);
+    border-radius: 2px;
+    padding: 1px 5px;
+  }
+
+  .note {
+    border-left: 3px solid var(--rule-strong);
+    padding: 2px 0 2px 18px;
+    margin: 22px 0;
+    color: var(--muted);
+    font-size: 15.5px;
+  }
+  .note b { color: var(--ink); }
+
+  footer {
+    margin-top: 64px;
+    padding-top: 20px;
+    border-top: 1px solid var(--rule);
+    font-family: var(--mono);
+    font-size: 11.5px;
+    color: var(--muted);
+  }
+
+  @media print {
+    body { background: #fff; }
+    .sheet { padding: 0; max-width: none; }
+    section { break-inside: avoid-page; }
+    .entry, .group { break-inside: avoid; }
+  }
+</style>
+
+<div class="sheet">
+
+  <header class="masthead">
+    <div class="kicker">HitroTech OrderScan &middot; Engineering Review</div>
+    <h1>OrderScan Backend Audit</h1>
+    <p class="standfirst">Every problem found and repaired in the order-extraction backend, written for people who need to know what was wrong and what it would have cost &mdash; not how it was coded.</p>
+    <div class="meta">
+      <span>Completed <b>16 September 2026</b></span>
+      <span>Scope <b>Backend + extraction + admin UI</b></span>
+      <span>Latest commit <b>86a4dfa</b></span>
+    </div>
+  </header>
+
+  <div class="tally">
+    <div class="flagged"><span class="n">33</span><span class="l">Problems fixed</span></div>
+    <div class="passed"><span class="n">342</span><span class="l">Automated tests</span></div>
+    <div><span class="n">65</span><span class="l">Backend endpoints covered</span></div>
+    <div><span class="n">0</span><span class="l">Type errors</span></div>
+  </div>
+
+  <section>
+    <div class="eyebrow">01 &mdash; What this covers</div>
+    <h2>A day spent finding what nobody could see</h2>
+    <p class="lede">Almost none of the problems below showed up on screen. That is what made them worth hunting. A page looked fine, a button said &ldquo;Saved&rdquo;, a report showed a number &mdash; and underneath, the work had not actually happened.</p>
+    <p>The system reads order screenshots, pulls the customer details out of them, and stores them. Around that sit the money parts: partner commissions, brand invoices, payouts, plans and billing. This review went through all of it.</p>
+    <p>Each problem below says what was wrong and what it could have cost you. They are grouped by the kind of mistake, because the same kind kept appearing in different places.</p>
+  </section>
+
+  <section>
+    <div class="eyebrow">02 &mdash; The most serious findings</div>
+    <h2>Five that could have caused real damage</h2>
+
+    <div class="register">
+
+      <div class="entry">
+        <div class="id">01</div>
+        <div class="head">
+          <h3>The payment ledger mixed every company&rsquo;s money together</h3>
+          <span class="where">reconcile.functions.ts &middot; getPaymentLedger</span>
+        </div>
+        <div class="body">
+          <span class="impact">Data leak between customers</span>
+          <p>The payment ledger page asks five questions of the database: who is owed what, what has been paid, what the brand was invoiced, and what came back. <b>Not one of those five filtered by company.</b></p>
+          <p>Only a database-level safety net stood between one customer&rsquo;s ledger and another&rsquo;s. Every other money screen in the system filters properly &mdash; this one did not filter at all.</p>
+          <p>There was a second edge on it: the brand invoice lookup expected to find at most one invoice for the month. The moment a second company had an invoice for that same month, the page would have stopped working entirely.</p>
+        </div>
+      </div>
+
+      <div class="entry">
+        <div class="id">02</div>
+        <div class="head">
+          <h3>Money reports showed zero instead of an error</h3>
+          <span class="where">brand.functions.ts &amp; reconcile.functions.ts</span>
+        </div>
+        <div class="body">
+          <span class="impact">Wrong numbers, silently</span>
+          <p>The agency earnings report and the payment ledger both ask the database several questions at once. If one of those questions failed, the code quietly treated the answer as &ldquo;nothing found&rdquo;.</p>
+          <p>The result looked exactly like a quiet month: <b>zero revenue, zero cost, zero margin &mdash; with no warning at all.</b> For a number somebody bills against, that is the worst possible way to fail.</p>
+          <p>Both reports now say which part failed and stop, rather than showing a confident zero.</p>
+        </div>
+      </div>
+
+      <div class="entry">
+        <div class="id">03</div>
+        <div class="head">
+          <h3>Payout runs hid their own failures</h3>
+          <span class="where">payouts.functions.ts &middot; generate &amp; bulk mark paid</span>
+        </div>
+        <div class="body">
+          <span class="impact">Partners silently missed</span>
+          <p>Generating partner payouts for a month writes one record per partner. The code counted a record only when it succeeded &mdash; and did nothing at all when it failed.</p>
+          <p>So a run that failed half its writes still came back with a tidy set of numbers, and <b>nobody could tell which partners had been left out.</b></p>
+          <p>Both functions now return a list of exactly which partners failed and why.</p>
+        </div>
+      </div>
+
+      <div class="entry">
+        <div class="id">04</div>
+        <div class="head">
+          <h3>Transferring ownership to the current owner broke ownership</h3>
+          <span class="where">workspace-members.functions.ts &middot; transferOwnership</span>
+        </div>
+        <div class="body">
+          <span class="impact">Account lockout</span>
+          <p>Handing ownership over does two things: promote the new owner, then demote the old one. If somebody picked the person who <em>already</em> owned the workspace, the second step undid the first.</p>
+          <p>The company record would still point at that person as owner, but their actual permission level would read &ldquo;admin&rdquo;. <b>The owner would be locked out of owner-only actions in their own company.</b></p>
+        </div>
+      </div>
+
+      <div class="entry">
+        <div class="id">05</div>
+        <div class="head">
+          <h3>Bulk imports jammed halfway through</h3>
+          <span class="where">extract-core.server.ts &amp; the batch page</span>
+        </div>
+        <div class="body">
+          <span class="impact">Work lost mid-batch</span>
+          <p>A 25-image import finished 18 and left 7 stuck. The images had already been read correctly &mdash; the database writes were fighting each other and losing.</p>
+          <p>Worse, the code that was supposed to mark a row as failed could <em>itself</em> lose that fight, leaving rows with no status and no owner at all.</p>
+          <p>Four changes fixed it: longer, smarter retries; protected failure paths; fewer simultaneous workers; and collapsing repeated batch-count updates into one. <b>The next 25-image run completed 25 of 25.</b></p>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <section>
+    <div class="eyebrow">03 &mdash; The rest, by pattern</div>
+    <h2>The same mistakes, in different places</h2>
+    <p>Once the first few were found, the same shapes kept turning up. Grouping them this way is more useful than a flat list &mdash; it shows what to watch for next time.</p>
+
+    <div class="group">
+      <h3>One company could reach another company&rsquo;s records &mdash; 7 places</h3>
+      <ul>
+        <li><b>Commission rates</b> could be edited by ID alone, with no check that the rate belonged to your company.</li>
+        <li><b>The overlap check</b> for a new commission band compared it against <em>every</em> company&rsquo;s bands &mdash; so another customer&rsquo;s rates could block yours, and a genuine clash in your own could be hidden behind it.</li>
+        <li><b>Payment records and brand receipts</b> could be deleted by ID alone.</li>
+        <li><b>A payout</b> could be filed into another company&rsquo;s books, because the permission check looked at your company while the record was written to the partner&rsquo;s.</li>
+        <li><b>Billing requests</b> could be listed for any company ID the caller sent, with no permission check &mdash; invoice amounts, payment references and notes.</li>
+        <li><b>The payment ledger</b> &mdash; finding 01 above.</li>
+      </ul>
+    </div>
+
+    <div class="group">
+      <h3>The system said &ldquo;done&rdquo; when nothing happened &mdash; 9 places</h3>
+      <ul>
+        <li><b>Editing a brand or a brand rate</b> reported success even when the database changed nothing.</li>
+        <li><b>Saving a partner match keyword</b> was fire-and-forget: it could fail and you would still be told it worked.</li>
+        <li><b>Changing a member&rsquo;s sign-in email</b> updated the login but could silently fail to update their profile &mdash; so an admin would see the old address and think it had not worked, while the login had already moved.</li>
+        <li><b>&ldquo;Send password reset&rdquo;</b> reported success whether or not any email was actually sent.</li>
+        <li><b>Two money reports</b> and <b>two payout runs</b> &mdash; findings 02 and 03 above.</li>
+      </ul>
+    </div>
+
+    <div class="group">
+      <h3>Features that had never worked at all &mdash; 7 places</h3>
+      <ul>
+        <li><b>&ldquo;Save view&rdquo; on All Orders</b> &mdash; could never have worked. A required field was missing from the record it tried to create.</li>
+        <li><b>Creating a scheduled report</b> &mdash; same missing field, same result.</li>
+        <li><b>The Pending and Failed status filters</b> on All Orders always came back empty. The underlying query already restricted results to successful orders, so asking for failed ones asked for something impossible.</li>
+        <li><b>The Network filter</b> only listed networks that happened to be on the page you were looking at &mdash; and once you picked one, the list shrank to that single option with no way back.</li>
+        <li><b>Saved views quietly dropped</b> the Branch and Store filters. You saved a view scoped to one branch, reloaded it later, and got all of them back with no indication anything was lost.</li>
+        <li><b>Saving an employee</b> failed if you left the commission field blank.</li>
+        <li><b>Saving a partner</b> failed if you left the join date blank.</li>
+      </ul>
+    </div>
+
+    <div class="group">
+      <h3>Wrong data, quietly &mdash; 2 places</h3>
+      <ul>
+        <li><b>The commission month</b> was built in a way that only worked if a full date was supplied. Given just a month, it produced an invalid date that matched nothing &mdash; so the summary would come back empty, with no error. Not yet triggered in production, but waiting for the first caller who passed a month to a field named &ldquo;month&rdquo;.</li>
+        <li><b>A plan granted by a super admin</b> kept whatever expiry date was already on the record &mdash; often one in the past. The grant registered as already expired and silently did nothing.</li>
+      </ul>
+    </div>
+
+    <div class="group">
+      <h3>Screenshot reading &mdash; 4 improvements</h3>
+      <ul>
+        <li><b>September orders were being missed.</b> The date reader expected three-letter months; the page writes &ldquo;Sept&rdquo;.</li>
+        <li><b>The time was being lost</b> whenever the screenshot software split the date and time onto two lines &mdash; which it does, unpredictably.</li>
+        <li><b>Full-window screenshots failed</b> because the order code was looked for in the first line only, and on those captures the first line is page furniture.</li>
+        <li><b>Order codes with a stray space</b> in them, or split in two, are now read correctly.</li>
+      </ul>
+      <p style="margin:12px 0 0;font-size:15px;color:var(--muted)">Result on a live 25-image batch: <b style="color:var(--ink)">24 of 25 orders read with no paid AI call at all.</b></p>
+    </div>
+
+    <div class="group">
+      <h3>Interface &mdash; 2 fixes</h3>
+      <ul>
+        <li><b>Dark mode text was invisible</b> across the dashboard, All Orders and six admin pages. Cards were forced to stay white while the text colour followed the theme &mdash; white on white.</li>
+        <li><b>The &ldquo;Processing&rdquo; tile&rsquo;s label ran underneath its icon.</b> Seven tiles in one row left too little width for a single long word.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <div class="eyebrow">04 &mdash; Safety net</div>
+    <h2>342 automated tests now guard this</h2>
+    <p>Before this work, almost nothing in the backend was tested. The parts that handle money and permissions had no automated checks at all &mdash; which is exactly why the problems above survived so long.</p>
+
+    <div class="scroller">
+      <table>
+        <thead>
+          <tr><th>Area</th><th>What the tests guard</th><th class="num">Tests</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Billing &amp; plans</td><td>Pricing, credits, refunds, who may change a plan</td><td class="num">30</td></tr>
+          <tr><td>Commissions</td><td>Rate bands, month totals, assigning activations</td><td class="num">29</td></tr>
+          <tr><td>Screenshot reading</td><td>Every layout and mangling seen in 35 real samples</td><td class="num">27</td></tr>
+          <tr><td>Plan pricing maths</td><td>Proration on every kind of plan change</td><td class="num">23</td></tr>
+          <tr><td>Brand earnings</td><td>Revenue, cost and margin splits</td><td class="num">22</td></tr>
+          <tr><td>Members &amp; roles</td><td>Who may promote, remove or transfer ownership</td><td class="num">20</td></tr>
+          <tr><td>Account recovery</td><td>Who may reset another person&rsquo;s sign-in</td><td class="num">20</td></tr>
+          <tr><td>Store IDs</td><td>Adding, editing, removing, duplicates</td><td class="num">18</td></tr>
+          <tr><td>Payment ledger</td><td>Owed vs paid, settlement states, brand side</td><td class="num">18</td></tr>
+          <tr><td>Payouts</td><td>Generation, bulk payment, failure reporting</td><td class="num">16</td></tr>
+          <tr><td>Other</td><td>Formatting, rate bands, salary, import queue</td><td class="num">71</td></tr>
+          <tr><td>Screenshot service</td><td>Image handling and the reading service itself</td><td class="num">28</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="note">
+      <b>The tests proved themselves twice while being written.</b> One fix was reported as applied but never actually saved to disk &mdash; a test caught it within seconds. Another time, the type checker caught a mistake in a test itself: it used an employee role where a partner role was required.
+    </div>
+  </section>
+
+  <section>
+    <div class="eyebrow">05 &mdash; Still open</div>
+    <h2>What has not been done</h2>
+    <p>Being straight about the edges:</p>
+
+    <div class="group">
+      <h3>Backend coverage is a little over half</h3>
+      <ul>
+        <li><b>65 of 120</b> backend endpoints now have tests. The money and permission ones were done first, on purpose &mdash; that is where a mistake costs the most.</li>
+        <li><b>55 remain</b>, mostly employees, reports, partners and workspace settings. A companion document lists them file by file.</li>
+      </ul>
+    </div>
+
+    <div class="group">
+      <h3>Two questions only you can answer</h3>
+      <ul>
+        <li><b>&ldquo;Registered Number&rdquo;</b> appeared on one screenshot out of 35, where &ldquo;Alternate Contact&rdquo; normally sits &mdash; and its value was the same number as the order&rsquo;s own. It is deliberately left unread until somebody confirms what that field means.</li>
+        <li><b>Duplicate detection</b> relies on a database column that nothing in this codebase ever fills in. If no database rule fills it, duplicate detection has never actually worked. Worth checking.</li>
+      </ul>
+    </div>
+
+    <div class="group">
+      <h3>Not visually checked</h3>
+      <ul>
+        <li>The dark-mode and layout fixes pass the type checker and the tests, but <b>nobody has looked at them in a browser yet.</b> Worth a glance after deploying.</li>
+        <li>Around 30 chart labels on the dashboard still use fixed colours. Some sit on coloured chart shapes where that is correct, so they need checking one by one rather than changing in bulk.</li>
+      </ul>
+    </div>
+  </section>
+
+  <footer>
+    HitroTech OrderScan &middot; backend audit &middot; 16 September 2026 &middot; 342 tests passing, type checker clean
+  </footer>
+
+</div>

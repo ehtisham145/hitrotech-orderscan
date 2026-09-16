@@ -1,0 +1,351 @@
+<title>OrderScan Test Register</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=JetBrains+Mono:wght@400;500;700&display=swap">
+
+<style>
+  :root {
+    --ground: #f4f6f7;
+    --surface: #ffffff;
+    --ink: #141a21;
+    --muted: #636d78;
+    --rule: #dbe0e5;
+    --rule-strong: #b9c1c9;
+    --flag: #a92a1d;
+    --flag-bg: #fbeceb;
+    --pass: #15604a;
+    --pass-bg: #e7f2ee;
+    --warn: #8a5a08;
+    --warn-bg: #fbf1de;
+    --track: #e4e8ec;
+
+    --display: "Archivo", "Helvetica Neue", Arial, sans-serif;
+    --body: "Source Serif 4", Georgia, "Times New Roman", serif;
+    --mono: "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #0e1216; --surface: #161b21; --ink: #e6ebf0; --muted: #97a1ac;
+      --rule: #262d35; --rule-strong: #3a434d;
+      --flag: #e8796d; --flag-bg: #2a1614;
+      --pass: #5cbb9a; --pass-bg: #10241e;
+      --warn: #d9a441; --warn-bg: #26200f;
+      --track: #232a31;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #0e1216; --surface: #161b21; --ink: #e6ebf0; --muted: #97a1ac;
+    --rule: #262d35; --rule-strong: #3a434d;
+    --flag: #e8796d; --flag-bg: #2a1614;
+    --pass: #5cbb9a; --pass-bg: #10241e;
+    --warn: #d9a441; --warn-bg: #26200f;
+    --track: #232a31;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--body);
+    font-size: 16.5px;
+    line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+  }
+  .sheet { max-width: 980px; margin: 0 auto; padding: 56px 28px 96px; }
+
+  .masthead { border-bottom: 3px solid var(--ink); padding-bottom: 20px; }
+  .kicker {
+    font-family: var(--mono); font-size: 11px; font-weight: 500;
+    letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted);
+  }
+  h1 {
+    font-family: var(--display); font-weight: 700;
+    font-size: clamp(34px, 6vw, 52px); line-height: 1.05;
+    letter-spacing: -0.022em; margin: 10px 0 12px; text-wrap: balance;
+  }
+  .standfirst { font-size: 19px; color: var(--muted); max-width: 62ch; margin: 0; }
+  .meta {
+    display: flex; flex-wrap: wrap; gap: 22px; margin-top: 22px;
+    font-family: var(--mono); font-size: 12px; color: var(--muted);
+  }
+  .meta b { color: var(--ink); font-weight: 500; }
+
+  /* progress */
+  .progress { margin: 34px 0 6px; }
+  .progress .bar {
+    height: 12px; background: var(--track); border: 1px solid var(--rule);
+    display: flex; overflow: hidden;
+  }
+  .progress .bar i { display: block; height: 100%; }
+  .progress .done { background: var(--pass); width: 54.2%; }
+  .progress .todo { background: transparent; flex: 1; }
+  .progress .legend {
+    display: flex; justify-content: space-between; margin-top: 9px;
+    font-family: var(--mono); font-size: 11.5px; color: var(--muted);
+  }
+  .progress .legend b { color: var(--ink); font-weight: 500; }
+
+  section { margin-top: 52px; }
+  .eyebrow {
+    font-family: var(--mono); font-size: 11px; font-weight: 700;
+    letter-spacing: 0.15em; text-transform: uppercase; color: var(--muted);
+    padding-bottom: 8px; border-bottom: 1px solid var(--rule-strong); margin-bottom: 26px;
+  }
+  h2 {
+    font-family: var(--display); font-weight: 600; font-size: 27px;
+    letter-spacing: -0.015em; margin: 0 0 14px; text-wrap: balance;
+  }
+  h3 {
+    font-family: var(--display); font-weight: 600; font-size: 17px;
+    margin: 26px 0 8px;
+  }
+  p { max-width: 70ch; margin: 0 0 16px; }
+
+  pre {
+    font-family: var(--mono); font-size: 13px; line-height: 1.6;
+    background: var(--surface); border: 1px solid var(--rule);
+    padding: 16px 18px; overflow-x: auto; margin: 0 0 18px;
+  }
+  code {
+    font-family: var(--mono); font-size: 0.88em;
+    background: var(--ground); border: 1px solid var(--rule);
+    border-radius: 2px; padding: 1px 5px;
+  }
+  pre code { background: none; border: none; padding: 0; font-size: inherit; }
+
+  .scroller { overflow-x: auto; border: 1px solid var(--rule); background: var(--surface); margin-bottom: 18px; }
+  table { border-collapse: collapse; width: 100%; font-size: 14.5px; min-width: 620px; }
+  th, td { text-align: left; padding: 10px 16px; border-bottom: 1px solid var(--rule); }
+  th {
+    font-family: var(--mono); font-size: 10.5px; font-weight: 700;
+    letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted);
+    background: var(--ground); position: sticky; top: 0;
+  }
+  tr:last-child td { border-bottom: none; }
+  td.file { font-family: var(--mono); font-size: 13px; }
+  td.num { font-family: var(--mono); font-variant-numeric: tabular-nums; text-align: right; }
+  tfoot td {
+    font-family: var(--mono); font-size: 12.5px; font-weight: 700;
+    border-top: 2px solid var(--rule-strong); background: var(--ground);
+  }
+
+  .chip {
+    display: inline-block; font-family: var(--mono); font-size: 10.5px;
+    font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase;
+    padding: 2px 8px; border-radius: 2px; white-space: nowrap;
+  }
+  .chip.done { background: var(--pass-bg); color: var(--pass); }
+  .chip.todo { background: var(--flag-bg); color: var(--flag); }
+  .chip.next { background: var(--warn-bg); color: var(--warn); }
+
+  .note {
+    border-left: 3px solid var(--rule-strong);
+    padding: 2px 0 2px 18px; margin: 22px 0;
+    color: var(--muted); font-size: 15.5px; max-width: 70ch;
+  }
+  .note b { color: var(--ink); }
+  .note.alert { border-left-color: var(--flag); }
+
+  ol, ul { max-width: 70ch; padding-left: 22px; }
+  li { margin-bottom: 9px; }
+
+  footer {
+    margin-top: 64px; padding-top: 20px; border-top: 1px solid var(--rule);
+    font-family: var(--mono); font-size: 11.5px; color: var(--muted);
+  }
+
+  @media print {
+    body { background: #fff; }
+    .sheet { padding: 0; max-width: none; }
+    section { break-inside: avoid-page; }
+    th { position: static; }
+  }
+</style>
+
+<div class="sheet">
+
+  <header class="masthead">
+    <div class="kicker">HitroTech OrderScan &middot; Handoff for the next session</div>
+    <h1>OrderScan Test Register</h1>
+    <p class="standfirst">Exactly which backend endpoints have tests, which do not, and the pattern to follow when writing the rest. Read this before adding any test to this repo.</p>
+    <div class="meta">
+      <span>As of <b>16 Sept 2026</b></span>
+      <span>Commit <b>86a4dfa</b></span>
+      <span><b>342</b> tests passing</span>
+      <span>tsc <b>clean</b></span>
+    </div>
+  </header>
+
+  <div class="progress">
+    <div class="bar"><i class="done"></i><i class="todo"></i></div>
+    <div class="legend">
+      <span><b>65</b> of 120 server functions covered &middot; 10 of 25 files</span>
+      <span><b>55</b> remaining</span>
+    </div>
+  </div>
+
+  <div class="note alert">
+    <b>Correct an earlier miscount.</b> Some notes in this project say &ldquo;151 server functions&rdquo;. That figure counted every occurrence of <code>createServerFn</code>, including import lines. The real number, counting <code>export const X = createServerFn(</code>, is <b>120</b>.
+  </div>
+
+  <section>
+    <div class="eyebrow">01 &mdash; The pattern</div>
+    <h2>Why a handler must be split before it can be tested</h2>
+    <p>A handler written inline inside <code>createServerFn(...).handler(...)</code> <b>cannot be called from a test.</b> The <code>requireSupabaseAuth</code> middleware calls <code>getRequest()</code>, which only resolves inside a real HTTP request. So every handler is written as a plain function with a one-line wrapper under it:</p>
+
+<pre><code>import type { ServerContext } from "./server-context";
+
+export async function doThingCore(data: Input, context: ServerContext) {
+  /* all the logic lives here */
+}
+
+export const doThing = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: Input) =&gt; input)
+  .handler(({ data, context }) =&gt; doThingCore(data, context));</code></pre>
+
+    <p>The test imports <code>doThingCore</code>. A handler taking no <code>data</code> becomes <code>doThingCore(context)</code>.</p>
+
+    <h3>The mock</h3>
+    <p><code>src/lib/test-utils/mock-supabase.ts</code> queues one canned result per <code>.from(table)</code> call, first-in-first-out per table name. A call with nothing left queued <b>throws</b> &mdash; an incomplete setup fails loudly instead of quietly reaching a real client. That throw is also useful as an assertion: queue nothing for a table to prove the code never touches it.</p>
+
+<pre><code>const { client, queueResponse, queueError, allowRole, getChain, rpc } = createMockSupabase();
+
+queueResponse("profiles", { data: { active_workspace_id: "ws1" }, error: null });
+allowRole();                       // has_workspace_role -&gt; true
+allowRole(false);                  // -&gt; assert the refusal
+queueError("stores", "boom");      // a failed query
+
+await doThingCore({ id: "s1" }, { supabase: client as never, userId: "u1" });
+
+expect(getChain("stores").eq).toHaveBeenCalledWith("workspace_id", "ws1");</code></pre>
+
+    <div class="note">
+      <b>Almost every test needs <code>allowRole()</code>.</b> <code>assertActiveWorkspaceRole</code> calls <code>rpc("has_workspace_role")</code>, so without it no test gets past the authorization check. It also reads <code>profiles</code> first for the active workspace &mdash; queue that too.
+      <br><br>
+      <b><code>rpc()</code> is both awaitable and chainable.</b> Some callers await it directly; others append <code>.maybeSingle()</code> (a set-returning SQL function). Both work.
+    </div>
+  </section>
+
+  <section>
+    <div class="eyebrow">02 &mdash; Covered</div>
+    <h2>10 files, 65 endpoints, 190 tests</h2>
+
+    <div class="scroller">
+      <table>
+        <thead>
+          <tr><th>File</th><th class="num">Endpoints</th><th class="num">Tests</th><th>Focus of the coverage</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="file">billing.functions.ts</td><td class="num">13</td><td class="num">30</td><td>Pricing from real payments, auto-apply, refusals</td></tr>
+          <tr><td class="file">workspace-members.functions.ts</td><td class="num">11</td><td class="num">20</td><td>Every role guard, owner protection, audit rows</td></tr>
+          <tr><td class="file">commission.functions.ts</td><td class="num">10</td><td class="num">29</td><td>Band overlap, month totals, workspace scoping</td></tr>
+          <tr><td class="file">brand.functions.ts</td><td class="num">9</td><td class="num">22</td><td>Revenue vs cost split, empty months, refusals</td></tr>
+          <tr><td class="file">reconcile.functions.ts</td><td class="num">6</td><td class="num">18</td><td>Owed vs paid, settlement states, scoping</td></tr>
+          <tr><td class="file">payouts.functions.ts</td><td class="num">5</td><td class="num">16</td><td>Generation, skip-if-paid, failure reporting</td></tr>
+          <tr><td class="file">stores.functions.ts</td><td class="num">4</td><td class="num">18</td><td>Normalisation, duplicates, not-found guard</td></tr>
+          <tr><td class="file">admin-recovery.functions.ts</td><td class="num">3</td><td class="num">20</td><td>The recovery guard itself, owner takeover</td></tr>
+          <tr><td class="file">queue.functions.ts</td><td class="num">3</td><td class="num">12</td><td>Claim/retry decisions, staleness</td></tr>
+          <tr><td class="file">batch-actions.functions.ts</td><td class="num">1</td><td class="num">5</td><td>Partial upload failure, all-fail cleanup</td></tr>
+        </tbody>
+        <tfoot>
+          <tr><td>10 files</td><td class="num">65</td><td class="num">190</td><td></td></tr>
+        </tfoot>
+      </table>
+    </div>
+
+    <p style="color:var(--muted);font-size:15px">A further <b>124</b> tests cover pure functions with no database: <code>plans</code> (23), <code>template-extract</code> (27), <code>slab-validation</code> (15), <code>plan-features</code> (15), <code>brand-slabs</code> (15), <code>format</code> (14), <code>db-payload</code> (8), <code>employee-pay</code> (7). Plus <b>28</b> Python tests for the screenshot-reading service.</p>
+  </section>
+
+  <section>
+    <div class="eyebrow">03 &mdash; Remaining</div>
+    <h2>15 files, 55 endpoints, in the order to do them</h2>
+    <p>Ordered by what a mistake would cost. Everything above the line has already been done; this is what is left.</p>
+
+    <div class="scroller">
+      <table>
+        <thead>
+          <tr><th>File</th><th class="num">Endpoints</th><th>Priority</th><th>Why it matters</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="file">employees.functions.ts</td><td class="num">12</td><td><span class="chip next">Next</span></td><td>Salary, advances, plan seat limits. Two bugs already found here.</td></tr>
+          <tr><td class="file">partners.functions.ts</td><td class="num">6</td><td><span class="chip next">Next</span></td><td>Partner records, plan partner limits. One bug already found.</td></tr>
+          <tr><td class="file">month-close.functions.ts</td><td class="num">4</td><td><span class="chip next">Next</span></td><td>Locks a month against edits. Interacts with a database trigger.</td></tr>
+          <tr><td class="file">workspace.functions.ts</td><td class="num">6</td><td><span class="chip todo">Then</span></td><td>Creating, renaming and deleting a whole workspace.</td></tr>
+          <tr><td class="file">admin-users.functions.ts</td><td class="num">1</td><td><span class="chip todo">Then</span></td><td>Super-admin surface.</td></tr>
+          <tr><td class="file">reliability.functions.ts</td><td class="num">9</td><td><span class="chip todo">Then</span></td><td>Report generation and file delivery.</td></tr>
+          <tr><td class="file">notifications.functions.ts</td><td class="num">5</td><td><span class="chip todo">Then</span></td><td>In-app alerts and preferences.</td></tr>
+          <tr><td class="file">statements.functions.ts</td><td class="num">2</td><td><span class="chip todo">Then</span></td><td>Partner statements.</td></tr>
+          <tr><td class="file">portal.functions.ts</td><td class="num">2</td><td><span class="chip todo">Then</span></td><td>What a partner sees of their own data.</td></tr>
+          <tr><td class="file">performance.functions.ts</td><td class="num">2</td><td><span class="chip todo">Later</span></td><td>Store and partner performance figures.</td></tr>
+          <tr><td class="file">usage.functions.ts</td><td class="num">2</td><td><span class="chip todo">Later</span></td><td>Plan usage counters.</td></tr>
+          <tr><td class="file">kpis.functions.ts</td><td class="num">1</td><td><span class="chip todo">Later</span></td><td>Dashboard tiles.</td></tr>
+          <tr><td class="file">trends.functions.ts</td><td class="num">1</td><td><span class="chip todo">Later</span></td><td>Dashboard charts.</td></tr>
+          <tr><td class="file">activity.functions.ts</td><td class="num">1</td><td><span class="chip todo">Later</span></td><td>Activity feed.</td></tr>
+          <tr><td class="file">screenshot-upload.functions.ts</td><td class="num">1</td><td><span class="chip todo">Later</span></td><td>Signed upload URLs.</td></tr>
+        </tbody>
+        <tfoot>
+          <tr><td>15 files</td><td class="num">55</td><td></td><td></td></tr>
+        </tfoot>
+      </table>
+    </div>
+
+    <div class="note">
+      <b>Also untested:</b> the 10 route handlers under <code>src/routes/api/</code>, and every React component &mdash; <code>vitest.config.ts</code> sets <code>environment: "node"</code>, so there is no DOM available for component tests today.
+    </div>
+  </section>
+
+  <section>
+    <div class="eyebrow">04 &mdash; What to test for</div>
+    <h2>The five defects that kept recurring</h2>
+    <p>33 problems were found across the covered files, and they clustered into five shapes. Write the test for the shape, not just the happy path.</p>
+
+    <ol>
+      <li><b>Missing workspace filter.</b> Every query and every write must carry <code>.eq("workspace_id", wsId)</code>. Assert it with <code>getChain(table).eq</code>. Found 7 times.</li>
+      <li><b>Write by id alone.</b> An update or delete matching only <code>.eq("id", ...)</code> lets one company touch another&rsquo;s row. Found 5 times.</li>
+      <li><b>Unchecked write result.</b> <code>.select("id")</code> and treat zero rows as a failure &mdash; otherwise a refused write reports success. Found 5 times.</li>
+      <li><b>Discarded query error.</b> <code>const { data } = await ...</code> without touching <code>error</code> turns a failure into an empty result. On a money report that means a confident zero. Found 4 times.</li>
+      <li><b>Missing role check.</b> Every write endpoint needs an <code>allowRole(false)</code> test. One listing endpoint had no check at all.</li>
+    </ol>
+
+    <h3>A checklist per endpoint</h3>
+    <ul>
+      <li>Refusal: <code>allowRole(false)</code> &rarr; throws.</li>
+      <li>Scoping: the workspace filter is actually applied.</li>
+      <li>Not found: a row from another workspace &rarr; reported, not silently ok.</li>
+      <li>Error path: <code>queueError(...)</code> &rarr; surfaces, not swallowed.</li>
+      <li>Edge values: <code>null</code>, <code>0</code>, empty list, division by zero.</li>
+    </ul>
+  </section>
+
+  <section>
+    <div class="eyebrow">05 &mdash; Running them</div>
+    <h2>Commands and file locations</h2>
+
+<pre><code>npm test                                   # vitest &mdash; 314 tests
+npm run test:watch
+npx vitest run src/lib/stores.functions.test.ts
+npx tsc --noEmit -p tsconfig.json          # must stay clean
+
+pip install -r ocr-service/requirements/test.txt   # once
+pytest                                     # 28 tests, works from the repo root</code></pre>
+
+    <p><b>Tests live beside the file they cover:</b> <code>src/lib/x.ts</code> &rarr; <code>src/lib/x.test.ts</code>. Shared pieces are <code>src/lib/test-utils/mock-supabase.ts</code> and <code>src/lib/server-context.ts</code>. The Python suite lives in <code>ocr-service/tests/</code>.</p>
+
+    <div class="note">
+      <b>Install <code>requirements/test.txt</code>, not <code>dev.txt</code>.</b> The dev file pulls in <code>base.txt</code> and therefore paddlepaddle, which is a large download and will not install on Windows. The suite never needs it &mdash; <code>conftest.py</code> keeps the lazy paddle import from ever running.
+    </div>
+
+    <div class="note alert">
+      <b>Two traps that cost real time here.</b> Scripted edits that <code>sys.exit()</code> on a failed match <em>before</em> saving will silently discard edits that already matched &mdash; one fix was reported as applied and never written to disk, and only a test caught it. Collect every edit, verify all match, then write once. And check <code>tsc</code> before committing, not after: one commit went out with two type errors in a test file.
+    </div>
+  </section>
+
+  <footer>
+    HitroTech OrderScan &middot; test register &middot; 16 September 2026 &middot; next up: employees.functions.ts (12 endpoints)
+  </footer>
+
+</div>
