@@ -452,6 +452,52 @@ miscount. Note `docker logs` sends container stderr straight to the terminal,
 bypassing a pipe — warnings and errors will appear around a `grep -c` result
 rather than being counted by it.
 
+### 2.10 Database-side triggers block writes the code knows nothing about
+
+None of this is in the repo — it lives in the client's Supabase project as
+PL/pgSQL, so it is invisible to `grep` and to `types.ts`. It surfaces only as a
+failed statement.
+
+`month_locks` holds a per-workspace month lock, and
+`enforce_month_lock_on_extractions()` raises on **any** write to an
+`extractions` row in a locked month:
+
+```
+ERROR: Month 2026-08 is locked. Unlock it before editing activations.
+```
+
+The trap is that it fires *transitively*. Deleting a `commission_slabs` row
+looks unrelated to extractions, but:
+
+```
+DELETE commission_slabs
+  -> trigger trg_partner_slab_recompute()
+       -> recompute_partner_commission()
+            -> UPDATE extractions SET commission_amount = ...
+                 -> trigger enforce_month_lock_on_extractions()  -> RAISE
+```
+
+So a locked month can block edits to partners, slabs and payouts, not just to
+the activations themselves. **Clear `month_locks` first** when a bulk change
+has to touch historical data — that is the schema's own unlock path, and is far
+better than reaching for `SET session_replication_role = replica`, which
+disables every trigger *and* every foreign-key check at once.
+
+**Wiping the data (done once, 2026-09-16, at the client's request):** delete in
+FK order with `DELETE`, not `TRUNCATE ... CASCADE` — `profiles` has
+`profiles_active_workspace_id_fkey` to `workspaces`, so CASCADE would silently
+take the user accounts with it. Null that column first, keep `profiles`,
+`user_roles` and `user_recovery_codes`, and wrap the whole thing in
+`BEGIN; ... COMMIT;` so a trigger failure rolls back instead of leaving a
+half-wiped database. Expect `audit_logs` to be non-zero afterwards: the
+deletions write their own audit rows.
+
+Storage is separate and is **not** cleared by any of that. Deleting from
+`storage.objects` in SQL removes the listing but can leave the file behind; use
+the Storage REST API (`POST /storage/v1/object/list/<bucket>` to walk,
+`DELETE /storage/v1/object/<bucket>` with `{prefixes: [...]}` in batches of
+100). 1282 wiped rows left 1285 orphaned screenshots.
+
 ---
 
 ## 3. OCR service — measured behaviour
