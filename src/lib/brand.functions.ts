@@ -24,7 +24,7 @@ export type BrandRow = {
 export const listBrands = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    const { data, error } = await (context.supabase as any)
+    const { data, error } = await context.supabase
       .from("brands")
       .select("*")
       .eq("workspace_id", await requireActiveWorkspaceId(context.supabase, context.userId))
@@ -40,11 +40,11 @@ export const upsertBrand = createServerFn({ method: "POST" })
     const wsId = await assertActiveWorkspaceRole(context.supabase, context.userId, [...WRITE_ROLES]);
     if (data.id) {
       const { id, ...rest } = data;
-      const { error } = await (context.supabase as any).from("brands").update(rest).eq("workspace_id", wsId).eq("id", id);
+      const { error } = await context.supabase.from("brands").update(rest).eq("workspace_id", wsId).eq("id", id);
       if (error) return { ok: false as const, error: error.message };
       return { ok: true as const, id };
     }
-    const { data: row, error } = await (context.supabase as any)
+    const { data: row, error } = await context.supabase
       .from("brands")
       .insert({ ...data, workspace_id: wsId })
       .select("id")
@@ -58,7 +58,7 @@ export const deleteBrand = createServerFn({ method: "POST" })
   .inputValidator((input: { id: string }) => input)
   .handler(async ({ data, context }) => {
     const wsId = await assertActiveWorkspaceRole(context.supabase, context.userId, [...WRITE_ROLES]);
-    const { error } = await (context.supabase as any).from("brands").delete().eq("workspace_id", wsId).eq("id", data.id);
+    const { error } = await context.supabase.from("brands").delete().eq("workspace_id", wsId).eq("id", data.id);
     if (error) throw new Error(error.message);
     return { ok: true };
   });
@@ -67,7 +67,7 @@ export const listBrandSlabs = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: { brand_id: string }) => input)
   .handler(async ({ data, context }) => {
-    const { data: rows, error } = await (context.supabase as any)
+    const { data: rows, error } = await context.supabase
       .from("brand_slabs")
       .select("*")
       .eq("workspace_id", await requireActiveWorkspaceId(context.supabase, context.userId))
@@ -86,11 +86,11 @@ export const upsertBrandSlab = createServerFn({ method: "POST" })
     const wsId = await assertActiveWorkspaceRole(context.supabase, context.userId, [...WRITE_ROLES]);
     if (data.id) {
       const { id, ...rest } = data;
-      const { error } = await (context.supabase as any).from("brand_slabs").update(rest).eq("workspace_id", wsId).eq("id", id);
+      const { error } = await context.supabase.from("brand_slabs").update(rest).eq("workspace_id", wsId).eq("id", id);
       if (error) return { ok: false as const, error: error.message };
       return { ok: true as const };
     }
-    const { error } = await (context.supabase as any).from("brand_slabs").insert({ ...data, workspace_id: wsId });
+    const { error } = await context.supabase.from("brand_slabs").insert({ ...data, workspace_id: wsId });
     if (error) return { ok: false as const, error: error.message };
     return { ok: true as const };
   });
@@ -100,7 +100,7 @@ export const deleteBrandSlab = createServerFn({ method: "POST" })
   .inputValidator((input: { id: string }) => input)
   .handler(async ({ data, context }) => {
     const wsId = await assertActiveWorkspaceRole(context.supabase, context.userId, [...WRITE_ROLES]);
-    const { error } = await (context.supabase as any).from("brand_slabs").delete().eq("workspace_id", wsId).eq("id", data.id);
+    const { error } = await context.supabase.from("brand_slabs").delete().eq("workspace_id", wsId).eq("id", data.id);
     if (error) throw new Error(error.message);
     return { ok: true };
   });
@@ -118,7 +118,7 @@ export const getAgencyEarnings = createServerFn({ method: "GET" })
     const wsId = await requireActiveWorkspaceId(context.supabase, context.userId);
 
     const [brandsRes, extRes, partnersRes, employeesRes] = await Promise.all([
-      (context.supabase as any).from("brands").select("*").eq("workspace_id", wsId).order("created_at", { ascending: true }),
+      context.supabase.from("brands").select("*").eq("workspace_id", wsId).order("created_at", { ascending: true }),
       context.supabase
         .from("extractions")
         .select("partner_id, commission_amount")
@@ -149,7 +149,7 @@ export const getAgencyEarnings = createServerFn({ method: "GET" })
 
     let slabs: (Slab & { id: string })[] = [];
     if (brand) {
-      const { data: s } = await (context.supabase as any)
+      const { data: s } = await context.supabase
         .from("brand_slabs")
         .select("*")
         .eq("brand_id", brand.id)
@@ -187,7 +187,7 @@ export const getAgencyEarnings = createServerFn({ method: "GET" })
 
     let invoice: any = null;
     if (brand) {
-      const { data: inv } = await (context.supabase as any)
+      const { data: inv } = await context.supabase
         .from("brand_invoices")
         .select("*")
         .eq("brand_id", brand.id)
@@ -231,7 +231,7 @@ export const saveBrandInvoice = createServerFn({ method: "POST" })
         .eq("status", "success")
         .eq("is_duplicate", false)
         .eq("commission_month", month),
-      (context.supabase as any).from("brand_slabs").select("*").eq("brand_id", data.brand_id),
+      context.supabase.from("brand_slabs").select("*").eq("brand_id", data.brand_id),
     ]);
 
     const list = (rows ?? []) as any[];
@@ -239,7 +239,7 @@ export const saveBrandInvoice = createServerFn({ method: "POST" })
     const partnerCost = list.reduce((s, r) => s + (r.commission_amount ?? 0), 0);
     const { total } = computeSlabAmount(count, (slabs ?? []) as Slab[]);
 
-    const { error } = await (context.supabase as any).from("brand_invoices").upsert(
+    const { error } = await context.supabase.from("brand_invoices").upsert(
       {
         workspace_id: wsId,
         brand_id: data.brand_id,
@@ -260,7 +260,7 @@ export const markBrandInvoiceReceived = createServerFn({ method: "POST" })
   .inputValidator((input: { id: string; received: boolean; payment_reference?: string | null; notes?: string | null }) => input)
   .handler(async ({ data, context }) => {
     await assertActiveWorkspaceRole(context.supabase, context.userId, [...WRITE_ROLES]);
-    const { error } = await (context.supabase as any)
+    const { error } = await context.supabase
       .from("brand_invoices")
       .update({
         status: data.received ? "received" : "pending",

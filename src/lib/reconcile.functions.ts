@@ -150,7 +150,7 @@ export const recordPayoutPayment = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const wsId = await assertActiveWorkspaceRole(context.supabase, context.userId, [...WRITE_ROLES]);
     if (!(data.amount_pkr > 0)) return { ok: false as const, error: "Amount must be greater than zero" };
-    const { error } = await (context.supabase as any).from("payout_payments").insert({
+    const { error } = await context.supabase.from("payout_payments").insert({
       workspace_id: wsId,
       partner_id: data.partner_id,
       month: monthStart(data.month),
@@ -170,7 +170,7 @@ export const deletePayoutPayment = createServerFn({ method: "POST" })
   .inputValidator((input: { id: string }) => input)
   .handler(async ({ data, context }) => {
     await assertActiveWorkspaceRole(context.supabase, context.userId, [...WRITE_ROLES]);
-    const { error } = await (context.supabase as any).from("payout_payments").delete().eq("id", data.id);
+    const { error } = await context.supabase.from("payout_payments").delete().eq("id", data.id);
     if (error) return { ok: false as const, error: error.message };
     return { ok: true as const };
   });
@@ -191,7 +191,7 @@ export const recordBrandReceipt = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const wsId = await assertActiveWorkspaceRole(context.supabase, context.userId, [...WRITE_ROLES]);
     if (!(data.amount_pkr > 0)) return { ok: false as const, error: "Amount must be greater than zero" };
-    const { error } = await (context.supabase as any).from("brand_receipts").insert({
+    const { error } = await context.supabase.from("brand_receipts").insert({
       workspace_id: wsId,
       brand_id: data.brand_id,
       month: monthStart(data.month),
@@ -211,7 +211,7 @@ export const deleteBrandReceipt = createServerFn({ method: "POST" })
   .inputValidator((input: { id: string }) => input)
   .handler(async ({ data, context }) => {
     await assertActiveWorkspaceRole(context.supabase, context.userId, [...WRITE_ROLES]);
-    const { error } = await (context.supabase as any).from("brand_receipts").delete().eq("id", data.id);
+    const { error } = await context.supabase.from("brand_receipts").delete().eq("id", data.id);
     if (error) return { ok: false as const, error: error.message };
     return { ok: true as const };
   });
@@ -221,7 +221,7 @@ export const listReceiptBrands = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const wsId = await requireActiveWorkspaceId(context.supabase, context.userId);
-    const { data } = await (context.supabase as any)
+    const { data } = await context.supabase
       .from("brands")
       .select("id, name, active")
       .eq("workspace_id", wsId)

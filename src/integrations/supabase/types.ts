@@ -12,8 +12,63 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "14.5"
   }
+  graphql_public: {
+    Tables: {
+      [_ in never]: never
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      graphql: {
+        Args: {
+          extensions?: Json
+          operationName?: string
+          query?: string
+          variables?: Json
+        }
+        Returns: Json
+      }
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
+  }
   public: {
     Tables: {
+      activation_types: {
+        Row: {
+          active: boolean
+          code: string | null
+          created_at: string
+          id: string
+          name: string
+          sort_order: number
+          workspace_id: string
+        }
+        Insert: {
+          active?: boolean
+          code?: string | null
+          created_at?: string
+          id?: string
+          name: string
+          sort_order?: number
+          workspace_id: string
+        }
+        Update: {
+          active?: boolean
+          code?: string | null
+          created_at?: string
+          id?: string
+          name?: string
+          sort_order?: number
+          workspace_id?: string
+        }
+        Relationships: []
+      }
       audit_logs: {
         Row: {
           action: string
@@ -118,12 +173,17 @@ export type Database = {
         Row: {
           admin_note: string | null
           amount_pkr: number
+          change_type: string
           created_at: string
+          credit_pkr: number
+          effective_from: string | null
+          gross_pkr: number | null
           id: string
           months: number
           payer_note: string | null
           payment_reference: string | null
           plan_tier: Database["public"]["Enums"]["workspace_plan"]
+          receipt_path: string | null
           requested_by: string
           reviewed_at: string | null
           reviewed_by: string | null
@@ -134,12 +194,17 @@ export type Database = {
         Insert: {
           admin_note?: string | null
           amount_pkr: number
+          change_type?: string
           created_at?: string
+          credit_pkr?: number
+          effective_from?: string | null
+          gross_pkr?: number | null
           id?: string
           months?: number
           payer_note?: string | null
           payment_reference?: string | null
           plan_tier: Database["public"]["Enums"]["workspace_plan"]
+          receipt_path?: string | null
           requested_by: string
           reviewed_at?: string | null
           reviewed_by?: string | null
@@ -150,12 +215,17 @@ export type Database = {
         Update: {
           admin_note?: string | null
           amount_pkr?: number
+          change_type?: string
           created_at?: string
+          credit_pkr?: number
+          effective_from?: string | null
+          gross_pkr?: number | null
           id?: string
           months?: number
           payer_note?: string | null
           payment_reference?: string | null
           plan_tier?: Database["public"]["Enums"]["workspace_plan"]
+          receipt_path?: string | null
           requested_by?: string
           reviewed_at?: string | null
           reviewed_by?: string | null
@@ -250,12 +320,234 @@ export type Database = {
           },
         ]
       }
-      commission_slabs: {
+      brand_invoices: {
         Row: {
-          effective_from: string | null
-          effective_to: string | null
+          activations_count: number
+          amount_pkr: number
+          brand_id: string
+          created_at: string
+          id: string
+          margin_pkr: number
+          month: string
+          notes: string | null
+          partner_cost_pkr: number
+          payment_reference: string | null
+          received_at: string | null
+          received_by: string | null
+          status: string
+          updated_at: string
+          workspace_id: string
+        }
+        Insert: {
+          activations_count?: number
+          amount_pkr?: number
+          brand_id: string
+          created_at?: string
+          id?: string
+          margin_pkr?: number
+          month: string
+          notes?: string | null
+          partner_cost_pkr?: number
+          payment_reference?: string | null
+          received_at?: string | null
+          received_by?: string | null
+          status?: string
+          updated_at?: string
+          workspace_id: string
+        }
+        Update: {
+          activations_count?: number
+          amount_pkr?: number
+          brand_id?: string
+          created_at?: string
+          id?: string
+          margin_pkr?: number
+          month?: string
+          notes?: string | null
+          partner_cost_pkr?: number
+          payment_reference?: string | null
+          received_at?: string | null
+          received_by?: string | null
+          status?: string
+          updated_at?: string
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "brand_invoices_brand_id_fkey"
+            columns: ["brand_id"]
+            isOneToOne: false
+            referencedRelation: "brands"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "brand_invoices_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      brand_receipts: {
+        Row: {
+          amount_pkr: number
+          brand_id: string
+          created_at: string
+          created_by: string | null
+          id: string
+          method: string
+          month: string
+          notes: string | null
+          received_on: string
+          reference: string | null
+          updated_at: string
+          workspace_id: string
+        }
+        Insert: {
+          amount_pkr: number
+          brand_id: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          method?: string
+          month: string
+          notes?: string | null
+          received_on?: string
+          reference?: string | null
+          updated_at?: string
+          workspace_id: string
+        }
+        Update: {
+          amount_pkr?: number
+          brand_id?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          method?: string
+          month?: string
+          notes?: string | null
+          received_on?: string
+          reference?: string | null
+          updated_at?: string
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "brand_receipts_brand_id_fkey"
+            columns: ["brand_id"]
+            isOneToOne: false
+            referencedRelation: "brands"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "brand_receipts_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      brand_slabs: {
+        Row: {
+          active: boolean
+          brand_id: string
+          created_at: string
+          id: string
+          max_count: number | null
+          min_count: number
+          rate_pkr: number
+          updated_at: string
+          workspace_id: string
+        }
+        Insert: {
+          active?: boolean
+          brand_id: string
+          created_at?: string
+          id?: string
+          max_count?: number | null
+          min_count: number
+          rate_pkr?: number
+          updated_at?: string
+          workspace_id: string
+        }
+        Update: {
+          active?: boolean
+          brand_id?: string
+          created_at?: string
+          id?: string
+          max_count?: number | null
+          min_count?: number
+          rate_pkr?: number
+          updated_at?: string
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "brand_slabs_brand_id_fkey"
+            columns: ["brand_id"]
+            isOneToOne: false
+            referencedRelation: "brands"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "brand_slabs_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      brands: {
+        Row: {
           active: boolean
           created_at: string
+          id: string
+          name: string
+          notes: string | null
+          operator: string | null
+          updated_at: string
+          workspace_id: string
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          id?: string
+          name: string
+          notes?: string | null
+          operator?: string | null
+          updated_at?: string
+          workspace_id: string
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          id?: string
+          name?: string
+          notes?: string | null
+          operator?: string | null
+          updated_at?: string
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "brands_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      commission_slabs: {
+        Row: {
+          activation_type_id: string | null
+          active: boolean
+          created_at: string
+          effective_from: string | null
+          effective_to: string | null
           id: string
           max_count: number | null
           min_count: number
@@ -266,10 +558,11 @@ export type Database = {
           workspace_id: string
         }
         Insert: {
-          effective_from?: string | null
-          effective_to?: string | null
+          activation_type_id?: string | null
           active?: boolean
           created_at?: string
+          effective_from?: string | null
+          effective_to?: string | null
           id?: string
           max_count?: number | null
           min_count: number
@@ -280,10 +573,11 @@ export type Database = {
           workspace_id: string
         }
         Update: {
-          effective_from?: string | null
-          effective_to?: string | null
+          activation_type_id?: string | null
           active?: boolean
           created_at?: string
+          effective_from?: string | null
+          effective_to?: string | null
           id?: string
           max_count?: number | null
           min_count?: number
@@ -294,6 +588,13 @@ export type Database = {
           workspace_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "commission_slabs_activation_type_id_fkey"
+            columns: ["activation_type_id"]
+            isOneToOne: false
+            referencedRelation: "activation_types"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "commission_slabs_partner_id_fkey"
             columns: ["partner_id"]
@@ -312,32 +613,147 @@ export type Database = {
       }
       employees: {
         Row: {
+          area: string | null
+          city: string | null
+          cnic: string | null
+          commission_per_activation: number
+          compensation_type: string
           created_at: string
+          device_info: string | null
+          employee_id: string | null
           id: string
+          joining_date: string | null
+          kpi_metrics: Json
+          manager_id: string | null
           name: string
+          notes: string | null
+          phone: string | null
+          promotion_history: Json
+          role: Database["public"]["Enums"]["employee_role"]
+          salary: number | null
           sort_order: number
+          status: string | null
+          target_activations: number | null
           updated_at: string
           workspace_id: string
         }
         Insert: {
+          area?: string | null
+          city?: string | null
+          cnic?: string | null
+          commission_per_activation?: number
+          compensation_type?: string
           created_at?: string
+          device_info?: string | null
+          employee_id?: string | null
           id?: string
+          joining_date?: string | null
+          kpi_metrics?: Json
+          manager_id?: string | null
           name: string
+          notes?: string | null
+          phone?: string | null
+          promotion_history?: Json
+          role?: Database["public"]["Enums"]["employee_role"]
+          salary?: number | null
           sort_order?: number
+          status?: string | null
+          target_activations?: number | null
           updated_at?: string
           workspace_id: string
         }
         Update: {
+          area?: string | null
+          city?: string | null
+          cnic?: string | null
+          commission_per_activation?: number
+          compensation_type?: string
           created_at?: string
+          device_info?: string | null
+          employee_id?: string | null
           id?: string
+          joining_date?: string | null
+          kpi_metrics?: Json
+          manager_id?: string | null
           name?: string
+          notes?: string | null
+          phone?: string | null
+          promotion_history?: Json
+          role?: Database["public"]["Enums"]["employee_role"]
+          salary?: number | null
           sort_order?: number
+          status?: string | null
+          target_activations?: number | null
           updated_at?: string
           workspace_id?: string
         }
         Relationships: [
           {
+            foreignKeyName: "employees_manager_id_fkey"
+            columns: ["manager_id"]
+            isOneToOne: false
+            referencedRelation: "employees"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "employees_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      employees_advances: {
+        Row: {
+          amount: number
+          created_at: string
+          description: string | null
+          employee_id: string
+          id: string
+          is_settled: boolean
+          payment_date: string
+          repayment_amount: number | null
+          settled_at: string | null
+          updated_at: string
+          workspace_id: string
+        }
+        Insert: {
+          amount: number
+          created_at?: string
+          description?: string | null
+          employee_id: string
+          id?: string
+          is_settled?: boolean
+          payment_date?: string
+          repayment_amount?: number | null
+          settled_at?: string | null
+          updated_at?: string
+          workspace_id: string
+        }
+        Update: {
+          amount?: number
+          created_at?: string
+          description?: string | null
+          employee_id?: string
+          id?: string
+          is_settled?: boolean
+          payment_date?: string
+          repayment_amount?: number | null
+          settled_at?: string | null
+          updated_at?: string
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "employees_advances_employee_id_fkey"
+            columns: ["employee_id"]
+            isOneToOne: false
+            referencedRelation: "employees"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "employees_advances_workspace_id_fkey"
             columns: ["workspace_id"]
             isOneToOne: false
             referencedRelation: "workspaces"
@@ -350,6 +766,8 @@ export type Database = {
           activation_date: string | null
           activation_date_parsed: string | null
           activation_time: string | null
+          activation_type_id: string | null
+          alternative_contact: string | null
           anomalies: string[]
           avg_confidence: number | null
           batch_id: string
@@ -398,6 +816,8 @@ export type Database = {
           activation_date?: string | null
           activation_date_parsed?: string | null
           activation_time?: string | null
+          activation_type_id?: string | null
+          alternative_contact?: string | null
           anomalies?: string[]
           avg_confidence?: number | null
           batch_id: string
@@ -446,6 +866,8 @@ export type Database = {
           activation_date?: string | null
           activation_date_parsed?: string | null
           activation_time?: string | null
+          activation_type_id?: string | null
+          alternative_contact?: string | null
           anomalies?: string[]
           avg_confidence?: number | null
           batch_id?: string
@@ -491,6 +913,13 @@ export type Database = {
           workspace_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "extractions_activation_type_id_fkey"
+            columns: ["activation_type_id"]
+            isOneToOne: false
+            referencedRelation: "activation_types"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "extractions_batch_id_fkey"
             columns: ["batch_id"]
@@ -562,6 +991,65 @@ export type Database = {
           },
           {
             foreignKeyName: "generated_reports_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      month_closes: {
+        Row: {
+          activations_count: number
+          brand_revenue_pkr: number
+          closed_automatically: boolean
+          closed_by: string | null
+          created_at: string
+          id: string
+          margin_pkr: number
+          month: string
+          notes: string | null
+          partner_cost_pkr: number
+          payouts_created: number
+          status: string
+          updated_at: string
+          workspace_id: string
+        }
+        Insert: {
+          activations_count?: number
+          brand_revenue_pkr?: number
+          closed_automatically?: boolean
+          closed_by?: string | null
+          created_at?: string
+          id?: string
+          margin_pkr?: number
+          month: string
+          notes?: string | null
+          partner_cost_pkr?: number
+          payouts_created?: number
+          status?: string
+          updated_at?: string
+          workspace_id: string
+        }
+        Update: {
+          activations_count?: number
+          brand_revenue_pkr?: number
+          closed_automatically?: boolean
+          closed_by?: string | null
+          created_at?: string
+          id?: string
+          margin_pkr?: number
+          month?: string
+          notes?: string | null
+          partner_cost_pkr?: number
+          payouts_created?: number
+          status?: string
+          updated_at?: string
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "month_closes_workspace_id_fkey"
             columns: ["workspace_id"]
             isOneToOne: false
             referencedRelation: "workspaces"
@@ -800,6 +1288,66 @@ export type Database = {
           },
         ]
       }
+      payout_payments: {
+        Row: {
+          amount_pkr: number
+          created_at: string
+          created_by: string | null
+          id: string
+          method: string
+          month: string
+          notes: string | null
+          paid_on: string
+          partner_id: string
+          reference: string | null
+          updated_at: string
+          workspace_id: string
+        }
+        Insert: {
+          amount_pkr: number
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          method?: string
+          month: string
+          notes?: string | null
+          paid_on?: string
+          partner_id: string
+          reference?: string | null
+          updated_at?: string
+          workspace_id: string
+        }
+        Update: {
+          amount_pkr?: number
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          method?: string
+          month?: string
+          notes?: string | null
+          paid_on?: string
+          partner_id?: string
+          reference?: string | null
+          updated_at?: string
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "payout_payments_partner_id_fkey"
+            columns: ["partner_id"]
+            isOneToOne: false
+            referencedRelation: "partners"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payout_payments_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           active_workspace_id: string | null
@@ -835,6 +1383,65 @@ export type Database = {
           {
             foreignKeyName: "profiles_active_workspace_id_fkey"
             columns: ["active_workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      refund_requests: {
+        Row: {
+          admin_note: string | null
+          amount_pkr: number
+          bank_details: string | null
+          created_at: string
+          id: string
+          plan_tier: string | null
+          reason: string | null
+          requested_by: string
+          reviewed_at: string | null
+          reviewed_by: string | null
+          status: string
+          unused_days: number
+          updated_at: string
+          workspace_id: string
+        }
+        Insert: {
+          admin_note?: string | null
+          amount_pkr: number
+          bank_details?: string | null
+          created_at?: string
+          id?: string
+          plan_tier?: string | null
+          reason?: string | null
+          requested_by: string
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          status?: string
+          unused_days?: number
+          updated_at?: string
+          workspace_id: string
+        }
+        Update: {
+          admin_note?: string | null
+          amount_pkr?: number
+          bank_details?: string | null
+          created_at?: string
+          id?: string
+          plan_tier?: string | null
+          reason?: string | null
+          requested_by?: string
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          status?: string
+          unused_days?: number
+          updated_at?: string
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "refund_requests_workspace_id_fkey"
+            columns: ["workspace_id"]
             isOneToOne: false
             referencedRelation: "workspaces"
             referencedColumns: ["id"]
@@ -1148,6 +1755,9 @@ export type Database = {
           plan_activated_at: string | null
           plan_expires_at: string | null
           plan_tier: Database["public"]["Enums"]["workspace_plan"]
+          scheduled_months: number | null
+          scheduled_plan_tier: string | null
+          scheduled_starts_at: string | null
           seat_limit: number
           slug: string
           timezone: string
@@ -1163,6 +1773,9 @@ export type Database = {
           plan_activated_at?: string | null
           plan_expires_at?: string | null
           plan_tier?: Database["public"]["Enums"]["workspace_plan"]
+          scheduled_months?: number | null
+          scheduled_plan_tier?: string | null
+          scheduled_starts_at?: string | null
           seat_limit?: number
           slug: string
           timezone?: string
@@ -1178,6 +1791,9 @@ export type Database = {
           plan_activated_at?: string | null
           plan_expires_at?: string | null
           plan_tier?: Database["public"]["Enums"]["workspace_plan"]
+          scheduled_months?: number | null
+          scheduled_plan_tier?: string | null
+          scheduled_starts_at?: string | null
           seat_limit?: number
           slug?: string
           timezone?: string
@@ -1190,6 +1806,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      apply_scheduled_plan_changes: { Args: never; Returns: number }
       approve_billing_request: {
         Args: { _admin_note?: string; _request_id: string }
         Returns: undefined
@@ -1199,6 +1816,7 @@ export type Database = {
         Returns: boolean
       }
       current_partner_id: { Args: never; Returns: string }
+      expire_lapsed_plans: { Args: never; Returns: number }
       expire_workspace_plans: { Args: never; Returns: undefined }
       has_role: {
         Args: {
@@ -1251,6 +1869,7 @@ export type Database = {
         | "super_admin"
         | "operator"
         | "accountant"
+      employee_role: "bdo" | "asm" | "rsm"
       partner_role:
         | "franchise_owner"
         | "retailer"
@@ -1273,12 +1892,12 @@ export type Tables<
   DefaultSchemaTableNameOrOptions extends
     | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
         DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -1302,11 +1921,11 @@ export type TablesInsert<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -1327,11 +1946,11 @@ export type TablesUpdate<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -1352,11 +1971,11 @@ export type Enums<
   DefaultSchemaEnumNameOrOptions extends
     | keyof DefaultSchema["Enums"]
     | { schema: keyof DatabaseWithoutInternals },
-  EnumName extends DefaultSchemaEnumNameOrOptions extends {
+  EnumName extends (DefaultSchemaEnumNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaEnumNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -1369,11 +1988,11 @@ export type CompositeTypes<
   PublicCompositeTypeNameOrOptions extends
     | keyof DefaultSchema["CompositeTypes"]
     | { schema: keyof DatabaseWithoutInternals },
-  CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
+  CompositeTypeName extends (PublicCompositeTypeNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
-    : never = never,
+    : never) = never,
 > = PublicCompositeTypeNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -1383,6 +2002,9 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
+  graphql_public: {
+    Enums: {},
+  },
   public: {
     Enums: {
       app_role: [
@@ -1395,6 +2017,7 @@ export const Constants = {
         "operator",
         "accountant",
       ],
+      employee_role: ["bdo", "asm", "rsm"],
       partner_role: [
         "franchise_owner",
         "retailer",

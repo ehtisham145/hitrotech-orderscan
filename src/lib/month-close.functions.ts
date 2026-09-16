@@ -28,8 +28,8 @@ export const getMonthClose = createServerFn({ method: "GET" })
     const month = monthStartOf(data.month);
     const wsId = await requireActiveWorkspaceId(context.supabase, context.userId);
     const [closeRes, lockRes] = await Promise.all([
-      (context.supabase as any).from("month_closes").select("*").eq("workspace_id", wsId).eq("month", month).maybeSingle(),
-      (context.supabase as any).from("month_locks").select("*").eq("workspace_id", wsId).eq("month", month).maybeSingle(),
+      context.supabase.from("month_closes").select("*").eq("workspace_id", wsId).eq("month", month).maybeSingle(),
+      context.supabase.from("month_locks").select("*").eq("workspace_id", wsId).eq("month", month).maybeSingle(),
     ]);
     return {
       month,
@@ -42,7 +42,7 @@ export const listMonthCloses = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const wsId = await requireActiveWorkspaceId(context.supabase, context.userId);
-    const { data } = await (context.supabase as any)
+    const { data } = await context.supabase
       .from("month_closes")
       .select("*")
       .eq("workspace_id", wsId)
@@ -61,7 +61,7 @@ export const closeMonthNow = createServerFn({ method: "POST" })
       automatic: false,
       lock: data.lock !== false,
     });
-    await (context.supabase as any).from("audit_logs").insert({
+    await context.supabase.from("audit_logs").insert({
       user_id: context.userId,
       workspace_id: wsId,
       action: "month.closed",
@@ -78,9 +78,9 @@ export const reopenMonth = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const wsId = await assertActiveWorkspaceRole(context.supabase, context.userId, [...CLOSE_ROLES]);
     const month = monthStartOf(data.month);
-    await (context.supabase as any).from("month_closes").update({ status: "open" }).eq("workspace_id", wsId).eq("month", month);
-    await (context.supabase as any).from("month_locks").delete().eq("workspace_id", wsId).eq("month", month);
-    await (context.supabase as any).from("audit_logs").insert({
+    await context.supabase.from("month_closes").update({ status: "open" }).eq("workspace_id", wsId).eq("month", month);
+    await context.supabase.from("month_locks").delete().eq("workspace_id", wsId).eq("month", month);
+    await context.supabase.from("audit_logs").insert({
       user_id: context.userId,
       workspace_id: wsId,
       action: "month.reopened",

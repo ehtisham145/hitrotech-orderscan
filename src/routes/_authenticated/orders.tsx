@@ -113,7 +113,7 @@ function AllOrdersPage() {
     queryKey: ["orders-presets"],
     queryFn: async () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data, error } = await (supabase.from as any)("report_views")
+      const { data, error } = await supabase.from("report_views")
         .select("id, name, filters")
         .eq("scope", "orders")
         .order("created_at", { ascending: false });
@@ -285,8 +285,18 @@ function AllOrdersPage() {
       const { data: sess } = await supabase.auth.getUser();
       const uid = sess.user?.id;
       if (!uid) throw new Error("Not signed in");
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { error } = await (supabase.from as any)("report_views").insert({
+      // workspace_id is NOT NULL on report_views and this insert omitted it,
+      // so "Save view" could never have worked. It stayed hidden because the
+      // table was reached through an `as any` cast, which switched off exactly
+      // the check that catches a missing required column.
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("active_workspace_id")
+        .eq("id", uid)
+        .maybeSingle();
+      if (!profile?.active_workspace_id) throw new Error("No active workspace");
+      const { error } = await supabase.from("report_views").insert({
+        workspace_id: profile.active_workspace_id,
         user_id: uid,
         name: trimmed,
         scope: "orders",
@@ -304,7 +314,7 @@ function AllOrdersPage() {
   }
   async function deletePreset(id: string) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { error } = await (supabase.from as any)("report_views").delete().eq("id", id);
+    const { error } = await supabase.from("report_views").delete().eq("id", id);
     if (error) return toast.error(error.message);
     toast.success("Preset deleted");
     qc.invalidateQueries({ queryKey: ["orders-presets"] });

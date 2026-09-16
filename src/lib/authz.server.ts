@@ -15,7 +15,7 @@ export async function assertActiveWorkspaceRole(
 ): Promise<string> {
   const wsId = await requireActiveWorkspaceId(supabase, userId);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data, error } = await (supabase as any).rpc("has_workspace_role", {
+  const { data, error } = await supabase.rpc("has_workspace_role", {
     _ws: wsId,
     _roles: roles,
     _user_id: userId,
@@ -35,7 +35,7 @@ export async function assertWorkspaceRole(
   roles: Array<"owner" | "admin" | "manager" | "member" | "viewer">,
 ): Promise<void> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data, error } = await (supabase as any).rpc("has_workspace_role", {
+  const { data, error } = await supabase.rpc("has_workspace_role", {
     _ws: workspaceId,
     _roles: roles,
     _user_id: userId,

@@ -620,7 +620,7 @@ function ScheduledReportsSection({ views }: { views: Array<{ id: string; name: s
   const { data: schedules } = useQuery({
     queryKey: ["scheduled-reports"],
     queryFn: async () => {
-      const { data, error } = await (supabase.from as any)("scheduled_reports")
+      const { data, error } = await supabase.from("scheduled_reports")
         .select("*")
         .order("created_at", { ascending: false });
       if (error) throw error;
@@ -635,7 +635,7 @@ function ScheduledReportsSection({ views }: { views: Array<{ id: string; name: s
   const { data: generated } = useQuery({
     queryKey: ["generated-reports"],
     queryFn: async () => {
-      const { data, error } = await (supabase.from as any)("generated_reports")
+      const { data, error } = await supabase.from("generated_reports")
         .select("*")
         .order("created_at", { ascending: false })
         .limit(50);
@@ -655,7 +655,17 @@ function ScheduledReportsSection({ views }: { views: Array<{ id: string; name: s
     if (invalid.length > 0) { toast.error(`Invalid email: ${invalid[0]}`); return; }
     const { data: userData } = await supabase.auth.getUser();
     if (!userData.user) return;
-    const { error } = await (supabase.from as any)("scheduled_reports").insert({
+    // workspace_id is NOT NULL on scheduled_reports, and this insert omitted
+    // it — so creating a schedule always failed. The same lookup is already
+    // done for the other insert in this file; it was just never copied here.
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("active_workspace_id")
+      .eq("id", userData.user.id)
+      .maybeSingle();
+    if (!profile?.active_workspace_id) { toast.error("No active workspace"); return; }
+    const { error } = await supabase.from("scheduled_reports").insert({
+      workspace_id: profile.active_workspace_id,
       user_id: userData.user.id,
       view_id: viewId,
       name: name.trim(),
@@ -670,13 +680,13 @@ function ScheduledReportsSection({ views }: { views: Array<{ id: string; name: s
   }
 
   async function toggleSchedule(id: string, enabled: boolean) {
-    const { error } = await (supabase.from as any)("scheduled_reports").update({ enabled: !enabled }).eq("id", id);
+    const { error } = await supabase.from("scheduled_reports").update({ enabled: !enabled }).eq("id", id);
     if (error) { toast.error(error.message); return; }
     qc.invalidateQueries({ queryKey: ["scheduled-reports"] });
   }
 
   async function performDeleteSchedule(id: string) {
-    const { error } = await (supabase.from as any)("scheduled_reports").delete().eq("id", id);
+    const { error } = await supabase.from("scheduled_reports").delete().eq("id", id);
     if (error) { toast.error(error.message); return; }
     toast.success("Deleted");
     qc.invalidateQueries({ queryKey: ["scheduled-reports"] });

@@ -181,7 +181,7 @@ export const createBillingRequest = createServerFn({ method: "POST" })
       const expires = new Date(now);
       expires.setMonth(expires.getMonth() + data.months);
 
-      const { error: wsErr } = await (supabaseAdmin as any)
+      const { error: wsErr } = await supabaseAdmin
         .from("workspaces")
         .update({
           plan_tier: data.planTier,
@@ -195,7 +195,7 @@ export const createBillingRequest = createServerFn({ method: "POST" })
         .eq("id", data.workspaceId);
       if (wsErr) throw wsErr;
 
-      const { error: reqErr } = await (supabaseAdmin as any)
+      const { error: reqErr } = await supabaseAdmin
         .from("billing_requests")
         .update({
           status: "approved",
@@ -364,7 +364,7 @@ export const createRefundRequest = createServerFn({ method: "POST" })
     const amount = Math.min(data.amountPkr, quote.unusedValue);
     if (amount <= 0) throw new Error("There is no unused balance to refund right now.");
 
-    const { data: row, error } = await (context.supabase as any)
+    const { data: row, error } = await context.supabase
       .from("refund_requests")
       .insert({
         workspace_id: data.workspaceId,
@@ -387,7 +387,7 @@ export const listWorkspaceRefundRequests = createServerFn({ method: "GET" })
     z.object({ workspaceId: z.string().uuid() }).parse(d),
   )
   .handler(async ({ context, data }) => {
-    const { data: rows, error } = await (context.supabase as any)
+    const { data: rows, error } = await context.supabase
       .from("refund_requests")
       .select("*")
       .eq("workspace_id", data.workspaceId)
@@ -397,7 +397,7 @@ export const listWorkspaceRefundRequests = createServerFn({ method: "GET" })
       const { data: isSuper } = await context.supabase.rpc("is_super_admin", { _user_id: context.userId });
       if (isSuper) {
         const { supabaseAdmin } = await import("@/integrations/supabase/ext-client.server");
-        const { data: adminRows } = await (supabaseAdmin as any)
+        const { data: adminRows } = await supabaseAdmin
           .from("refund_requests")
           .select("*")
           .eq("workspace_id", data.workspaceId)
@@ -414,7 +414,7 @@ export const listAllRefundRequests = createServerFn({ method: "GET" })
   .handler(async ({ context }) => {
     const { data: isSuper } = await context.supabase.rpc("is_super_admin", { _user_id: context.userId });
     if (!isSuper) throw new Error("Forbidden");
-    const { data: rows, error } = await (context.supabase as any)
+    const { data: rows, error } = await context.supabase
       .from("refund_requests")
       .select("*, workspaces(name, slug)")
       .order("created_at", { ascending: false });
@@ -434,7 +434,7 @@ export const decideRefundRequest = createServerFn({ method: "POST" })
   .handler(async ({ context, data }) => {
     const { data: isSuper } = await context.supabase.rpc("is_super_admin", { _user_id: context.userId });
     if (!isSuper) throw new Error("Forbidden");
-    const { error } = await (context.supabase as any)
+    const { error } = await context.supabase
       .from("refund_requests")
       .update({
         status: data.status,

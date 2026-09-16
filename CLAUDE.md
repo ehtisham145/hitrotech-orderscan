@@ -102,7 +102,9 @@ repeated *successful* requests.
   treat zero rows as a failure.
 - Before adding a field to an update, confirm the column exists in
   `src/integrations/supabase/types.ts`. Do not trust `as any`.
-- The live column list (46 of them):
+- The column list below was captured when `types.ts` had 46 columns and is now
+  out of date (48). **Read `types.ts` instead — it is regenerated and accurate
+  as of 2026-09-16.** Kept only as a rough shape:
   `id, batch_id, created_by, storage_path, file_name, status, error_message,
   customer_name, phone_number, current_network, number_charges, paid_via,
   discount, email, store_id, reference, deposit, remaining_deposit, order_number,
@@ -118,15 +120,12 @@ renders. Harmless, but it is dead code, not a feature.
 
 **Two more mismatches between the field list and the schema, both live:**
 
-- **`alternative_contact` is not a column.** It is in `EXTRACT_FIELDS`
-  (`src/lib/format.ts:30`) and in the AI prompt's schema
-  (`src/lib/extraction/prompt.ts`), but it is absent from `extractions` in
-  `types.ts` — so `finalizeExtraction` writes it, PostgREST rejects the whole
-  update, and the "column missing → drop it and retry once" path
-  (`extract-core.server.ts:427-444`) rescues it. That path fires on **every
-  successful row**: one wasted round trip, then a second that works. It is
-  correct, not free. Fix by either adding the column (client's schema — ask
-  first) or removing the field from `EXTRACT_FIELDS` and the prompt.
+- ~~`alternative_contact` is not a column.~~ **Wrong — it exists.** This entry
+  said otherwise for a while because `types.ts` was stale (see §2.11). The live
+  table has 48 columns, not the 46 listed below, and `alternative_contact` is
+  one of them. The missing-column retry in `finalizeExtraction` was therefore
+  never firing for it. Left here as a warning: a claim about the schema that
+  came from a stale `types.ts` is not a claim about the schema.
 - **`order_number_normalized` is read but never written.** The duplicate check
   filters on it (`extract-core.server.ts:411`) and nothing in this repo assigns
   it. `types.ts` lists it in both `Insert` and `Update`, so it is an ordinary
@@ -497,6 +496,49 @@ Storage is separate and is **not** cleared by any of that. Deleting from
 the Storage REST API (`POST /storage/v1/object/list/<bucket>` to walk,
 `DELETE /storage/v1/object/<bucket>` with `{prefixes: [...]}` in batches of
 100). 1282 wiped rows left 1285 orphaned screenshots.
+
+### 2.11 `types.ts` was stale, and `as any` hid it
+
+`src/integrations/supabase/types.ts` is generated from the database, and it had
+drifted badly: **23 tables typed, 32 actually in the database.** Nine real,
+in-use tables were missing from it —
+
+```
+activation_types  brand_invoices  brand_receipts  brand_slabs  brands
+employees_advances  month_closes  payout_payments  refund_requests
+```
+
+— along with two extra `extractions` columns, one of which was
+`alternative_contact` (see §2.1, where the stale file caused a wrong entry).
+
+Because every one of those tables was reached through an `as any` cast, nothing
+complained. That is the whole cost of the cast: it does not just silence noise,
+it switches off the check that catches a wrong or missing column. Two real bugs
+were sitting behind it and surfaced the moment the casts came off:
+
+| Bug | Effect |
+|---|---|
+| `report_views` insert had no `workspace_id` (NOT NULL) | "Save view" on All Orders could never work |
+| `scheduled_reports` insert had no `workspace_id` (NOT NULL) | Creating a report schedule always failed |
+
+Both had been unreachable-by-typecheck since they were written.
+
+**Regenerate after any migration** — this is the step that was being skipped:
+
+```bash
+npx supabase login                       # personal token from supabase.com/dashboard/account/tokens
+npx supabase gen types typescript --project-id iggnmbkylikybpespgsr > src/integrations/supabase/types.ts
+```
+
+Sanity check: the `public` schema should list **32** tables. Note the generated
+file now starts with a `graphql_public` schema block whose `Tables` is empty, so
+a naive "first Tables block" parser reads zero — count inside `public`.
+
+**Still to do:** ~111 `as any` casts remain on update/insert *payloads* (brand,
+commission, employees, billing, notifications, partners, month-close). Each one
+is a place the typechecker is still blindfolded, and the two bugs above are what
+that tends to be hiding. Removing them is the next pass; they need looking at
+individually rather than stripping in bulk.
 
 ---
 
