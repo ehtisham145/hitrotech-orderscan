@@ -556,12 +556,10 @@ Two casts in `extract-core.server.ts` were kept and are legitimate: that update
 object is built dynamically from `EXTRACT_FIELDS`, so `Record<string, any>` is
 genuinely what it is.
 
-**Test coverage, measured:** 151 server functions across 26 files; only
-`queue.functions.ts` and `batch-actions.functions.ts` have tests. The blocker is
-structural, not effort — `mock-supabase.ts` tests a `*Core(data, context)`
-function, and only those two files expose one. Every other file wraps its logic
-directly inside `createServerFn`, where it cannot be called from a test. Adding
-coverage means splitting each handler into a testable Core first.
+**Test coverage lives in `TEST-COVERAGE.md`** — which files are covered, which
+are left in priority order, the `*Core` pattern, the mock's requirements, and the
+five defect shapes worth writing a test for. Read it before adding a test.
+Current state: 65 of 120 server functions, 342 tests.
 
 ### 2.12 Server functions are only testable through a `*Core` split
 
