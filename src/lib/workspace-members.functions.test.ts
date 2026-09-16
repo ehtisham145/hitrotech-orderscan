@@ -235,7 +235,8 @@ describe("updateWorkspacePlanCore", () => {
     // Regression: the grant set only plan_tier and seat_limit, leaving whatever
     // plan_expires_at was already there. A past date meant every feature check
     // read the new plan as already expired.
-    const update = vi.fn(() => ({ eq: () => ({ error: null }) }));
+    // Typed parameter so mock.calls carries the payload rather than an empty tuple.
+    const update = vi.fn((_patch: Record<string, unknown>) => ({ eq: () => ({ error: null }) }));
     adminFrom.mockReturnValue({
       select: () => ({ eq: () => ({ maybeSingle: () => ({ data: { plan_tier: "free", seat_limit: 2 } }) }) }),
       update,
