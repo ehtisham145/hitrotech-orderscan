@@ -2,8 +2,19 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { computeSlabAmount, type Slab } from "./brand-slabs";
 
+// BUG FIX: the old formula (`input.slice(0, 8) + "01"`) only produced a
+// valid date when `input` was already a full "YYYY-MM-DD" (10 chars) — for
+// a 7-char "YYYY-MM" input (what <input type="month"> gives, and what
+// several callers pass), slicing 8 characters returns the string unchanged,
+// so "01" gets appended with no separating dash: "2026-09" -> "2026-0901",
+// which isn't a parseable date. Confirmed via
+// "2026-09".slice(0, 8) + "01" === "2026-0901" (broken) vs
+// "2026-09-15".slice(0, 8) + "01" === "2026-09-01" (looks right only by
+// coincidence of matching string lengths — reliability.functions.ts had
+// the identical bug in its own copy of this helper, same fix applied there).
 export function monthStartOf(input?: string) {
-  return ((input ?? new Date().toISOString().slice(0, 8) + "01").slice(0, 8) + "01") as string;
+  const base = input ?? new Date().toISOString().slice(0, 10);
+  return base.slice(0, 7) + "-01";
 }
 
 export function previousMonthStart(now = new Date()) {

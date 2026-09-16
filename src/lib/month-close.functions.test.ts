@@ -41,6 +41,21 @@ describe("getMonthCloseCore", () => {
     expect(getChain("month_locks").eq).toHaveBeenCalledWith("workspace_id", "ws1");
   });
 
+  it("normalises a bare YYYY-MM input (no day component) correctly", async () => {
+    // Regression guard: monthStartOf used to build this via
+    // `input.slice(0, 8) + "01"`, which only produces a valid date for a
+    // 10-char "YYYY-MM-DD" input. A 7-char "YYYY-MM" input (what
+    // <input type="month"> actually sends) came out as "2026-0901" —
+    // missing the dash, not a parseable date at all.
+    const { client, queueResponse } = createMockSupabase();
+    queueResponse("profiles", PROFILE);
+    queueResponse("month_closes", { data: null, error: null });
+    queueResponse("month_locks", { data: null, error: null });
+
+    const result = await getMonthCloseCore({ month: "2026-09" }, ctx(client));
+    expect(result.month).toBe("2026-09-01");
+  });
+
   it("reports locked: true when a lock row exists", async () => {
     const { client, queueResponse } = createMockSupabase();
     queueResponse("profiles", PROFILE);
