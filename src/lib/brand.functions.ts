@@ -11,8 +11,16 @@ const WRITE_ROLES = ["owner", "admin"] as const;
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
+// BUG FIX: the old formula (`input.slice(0, 8) + "01"`) only produces a
+// valid date for a 10-char "YYYY-MM-DD" input — a 7-char "YYYY-MM" input
+// (what a parameter named `month` invites, and what commission.functions.ts's
+// own getCommissionSummaryCore already documented hitting) comes out as
+// "2026-0901", an invalid date matching no commission_month at all. Same
+// bug, same fix, as reliability.functions.ts / month-close.server.ts /
+// statements.functions.ts / performance.functions.ts.
 function monthStart(input?: string) {
-  return ((input ?? new Date().toISOString().slice(0, 8) + "01").slice(0, 8) + "01") as string;
+  const base = input ?? new Date().toISOString().slice(0, 10);
+  return base.slice(0, 7) + "-01";
 }
 
 export type BrandRow = {

@@ -40,6 +40,16 @@ describe("getPaymentLedgerCore", () => {
     }
   });
 
+  it("normalises a bare YYYY-MM input (no day component) correctly", async () => {
+    // Regression guard: monthStart used to build this via
+    // `input.slice(0, 8) + "01"`, valid only for a 10-char "YYYY-MM-DD"
+    // input — a 7-char "YYYY-MM" input came out as "2026-0901", invalid.
+    const { client, queueResponse } = createMockSupabase();
+    queueLedger(queueResponse);
+    const res = await getPaymentLedgerCore({ month: "2026-09" }, ctx(client));
+    expect(res.month).toBe("2026-09-01");
+  });
+
   it("refuses to report a quiet month when a source query failed", async () => {
     const { client, queueResponse, queueError } = createMockSupabase();
     queueResponse("profiles", PROFILE);

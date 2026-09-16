@@ -1,9 +1,20 @@
 # Test coverage — what is done, what is left
 
-Status at commit `b325ea8`, 16 September 2026. **544 tests passing** (516 vitest
-+ 28 pytest), `tsc` clean.
+Status as of 16 September 2026. **593 tests passing** (565 vitest + 28
+pytest), `tsc` clean.
 
-**112 of 120 server functions covered** — 19 of 25 files.
+**120 of 120 server functions covered — every file, done.** Nothing left in
+this list. Any future server function gets its own `*Core` + test file
+following the pattern below; there's no longer a backlog to work through.
+
+While closing out the list, the same copy-pasted `monthStart` date bug (see
+item 6 further down) turned up in three *already-covered* files too —
+`brand.functions.ts`, `payouts.functions.ts`, `reconcile.functions.ts` — not
+just the newly-covered ones. All three fixed the same way, with a regression
+test added to each existing test file. `commission.functions.ts` had already
+been fixed in an earlier round (its own code comment documents the exact same
+bug) and needed no change. Worth knowing if a sixth copy ever turns up
+somewhere not yet grepped.
 
 > An earlier note in this project said "151 server functions". That counted every
 > occurrence of `createServerFn`, including import lines. Counting
@@ -66,7 +77,7 @@ something not on it — `range()` and `contains()` were added this round when
 
 ---
 
-## Covered — 19 files, 112 endpoints, 428 tests
+## Covered — 25 files, 120 endpoints, 469 tests
 
 | File | Endpoints | Tests |
 |---|---:|---:|
@@ -74,21 +85,27 @@ something not on it — `range()` and `contains()` were added this round when
 | `workspace-members.functions.ts` | 11 | 20 |
 | `commission.functions.ts` | 10 | 29 |
 | `employees.functions.ts` | 12 | 45 |
-| `brand.functions.ts` | 9 | 22 |
+| `brand.functions.ts` | 9 | 23 |
 | `reliability.functions.ts` | 9 | 32 |
-| `reconcile.functions.ts` | 6 | 18 |
+| `reconcile.functions.ts` | 6 | 19 |
 | `partners.functions.ts` | 6 | 25 |
 | `workspace.functions.ts` | 6 | 40 |
-| `payouts.functions.ts` | 5 | 16 |
+| `payouts.functions.ts` | 5 | 17 |
 | `notifications.functions.ts` | 5 | 18 |
 | `stores.functions.ts` | 4 | 18 |
 | `month-close.functions.ts` | 4 | 17 |
 | `admin-recovery.functions.ts` | 3 | 20 |
 | `queue.functions.ts` | 3 | 12 |
+| `performance.functions.ts` | 2 | 8 |
+| `usage.functions.ts` | 2 | 8 |
 | `statements.functions.ts` | 2 | 10 |
 | `portal.functions.ts` | 2 | 7 |
 | `batch-actions.functions.ts` | 1 | 5 |
 | `admin-users.functions.ts` | 1 | 7 |
+| `kpis.functions.ts` | 1 | 5 |
+| `trends.functions.ts` | 1 | 11 |
+| `activity.functions.ts` | 1 | 7 |
+| `screenshot-upload.functions.ts` | 1 | 7 |
 
 A further 124 tests cover pure functions: `plans` (23), `template-extract` (27),
 `slab-validation` (15), `plan-features` (15), `brand-slabs` (15), `format` (14),
@@ -96,30 +113,30 @@ A further 124 tests cover pure functions: `plans` (23), `template-extract` (27),
 
 ---
 
-## Remaining — 6 files, 8 endpoints
+## Not covered — by design, not backlog
 
-Small surface left, all read-mostly dashboard/reporting endpoints.
-
-| File | Endpoints | Why it matters |
-|---|---:|---|
-| `performance.functions.ts` | 2 | Store/partner performance figures. |
-| `usage.functions.ts` | 2 | Plan usage counters. |
-| `kpis.functions.ts` | 1 | Dashboard tiles. |
-| `trends.functions.ts` | 1 | Dashboard charts. |
-| `activity.functions.ts` | 1 | Activity feed. |
-| `screenshot-upload.functions.ts` | 1 | Signed upload URLs. |
-
-Also untested: the 10 handlers under `src/routes/api/`, and every React
-component — `vitest.config.ts` sets `environment: "node"`, so there is no DOM.
+- The 10 route handlers under `src/routes/api/`.
+- Every React component — `vitest.config.ts` sets `environment: "node"`, so
+  there is no DOM available for component tests today. Would need a separate
+  jsdom/Testing-Library setup, a deliberate scope decision, not an oversight.
 
 ---
 
 ## What to test for
 
-This round (employees, partners, month-close, workspace, admin-users,
-reliability, notifications, statements, portal) found real bugs of every one of
-the five shapes below, plus one new one worth adding as its own category:
+Across every file in this list, real bugs of every one of the five shapes
+below turned up, plus two worth their own categories:
 
+0. **Caller-supplied workspace id, unchecked.** The single worst bug found
+   all session: `trends.functions.ts`'s `getBusinessTrends` accepted an
+   optional `workspaceId` straight from the request and used it with *zero*
+   membership or role check — any signed-in user could pass any workspace's
+   uuid and read that workspace's full commission/partner/revenue trend
+   data. If an endpoint accepts a workspace id as *input* rather than
+   deriving it from the caller's own session, that input needs the same
+   membership-or-super-admin check `setActiveWorkspaceCore` uses — write the
+   test for "refuses a workspace id the caller doesn't belong to" before
+   anything else on that endpoint.
 1. **Missing workspace filter.** Every query and write needs
    `.eq("workspace_id", wsId)`. Assert via `getChain(table).eq`.
    `reliability.functions.ts` had three outright cross-tenant leaks this way
@@ -150,16 +167,28 @@ the five shapes below, plus one new one worth adding as its own category:
    test. `workspace.functions.ts`'s `renameWorkspace` had *no* authorization
    check at all — not even a workspace-membership check — despite its own
    doc comment saying "Owner or admin only."
-6. **New: copy-pasted date-normalization bug.** The same buggy `monthStart`
-   formula (`input.slice(0, 8) + "01"`) was found independently in three
+6. **Copy-pasted date-normalization bug.** The same buggy `monthStart`
+   formula (`input.slice(0, 8) + "01"`) was found independently in *four*
    different files — `reliability.functions.ts`, `month-close.server.ts`,
-   `statements.functions.ts`. It only produces a valid date for a 10-char
-   "YYYY-MM-DD" input; a 7-char "YYYY-MM" input (what `<input type="month">`
-   actually sends) comes out as `"2026-0901"` — no separating dash, not
-   parseable at all. All three fixed the same way: take the `"YYYY-MM"`
-   prefix and append `"-01"` explicitly, which is correct regardless of
-   input length. Worth grepping for `.slice(0, 8)` near a month-handling
-   function if touching date logic elsewhere in this codebase.
+   `statements.functions.ts`, and `performance.functions.ts` (inlined and
+   duplicated twice within that last one). Only produces a valid date for a
+   10-char "YYYY-MM-DD" input; a 7-char "YYYY-MM" input (what
+   `<input type="month">` actually sends) comes out as `"2026-0901"` — no
+   separating dash, not parseable at all. All four fixed the same way: take
+   the `"YYYY-MM"` prefix and append `"-01"` explicitly, which is correct
+   regardless of input length. Now genuinely done (grepped the whole `src/`
+   tree for `.slice(0, 8)` after the fourth one turned up) — but if a fifth
+   ever gets copy-pasted in from an old snippet, this is the shape to
+   recognize.
+7. **A discarded error feeding a security/business decision, not just a
+   display value.** The subtler sibling of #4: `usage.functions.ts`'s
+   `loadUsage` discarded the activation-count query's error, and
+   `checkActivationBudgetCore` trusts that count to decide whether to block
+   an import over the plan's limit. A failed count query silently reported
+   "0 used" — not a wrong dashboard number, but a bypassed billing limit.
+   When a query's result feeds an `if` that grants or denies something,
+   its error needs checking even more urgently than one that just fills in
+   a chart.
 
 **Per-endpoint checklist:** refusal (`allowRole(false)`) · workspace scoping ·
 row from another workspace reported not silently ok · `queueError` surfaces ·
@@ -172,7 +201,7 @@ just the first one.
 ## Running
 
 ```bash
-npm test                                   # vitest — 516
+npm test                                   # vitest — 565
 npx vitest run src/lib/stores.functions.test.ts
 npx tsc --noEmit -p tsconfig.json          # must stay clean
 

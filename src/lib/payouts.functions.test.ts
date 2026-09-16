@@ -26,6 +26,22 @@ describe("getPayoutSummaryCore", () => {
       expect(getChain(t).eq).toHaveBeenCalledWith("workspace_id", "ws1");
     }
   });
+
+  it("normalises a bare YYYY-MM input (no day component) correctly", async () => {
+    // Regression guard: monthStart used to build this via
+    // `input.slice(0, 8) + "01"`, valid only for a 10-char "YYYY-MM-DD"
+    // input — a 7-char "YYYY-MM" input came out as "2026-0901", invalid.
+    const { client, queueResponse, getChain } = createMockSupabase();
+    queueResponse("profiles", PROFILE);
+    queueResponse("partners", { data: [], error: null });
+    queueResponse("extractions", { data: [], error: null });
+    queueResponse("partner_payouts", { data: [], error: null });
+
+    await getPayoutSummaryCore({ month: "2026-09" }, ctx(client));
+
+    expect(getChain("extractions").eq).toHaveBeenCalledWith("commission_month", "2026-09-01");
+    expect(getChain("partner_payouts").eq).toHaveBeenCalledWith("month", "2026-09-01");
+  });
 });
 
 const PAYOUT = { partner_id: "p1", month: "2026-09", activations_count: 2, rate_pkr: 500, amount_pkr: 1000 };

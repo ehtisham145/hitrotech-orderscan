@@ -183,6 +183,17 @@ describe("upsertBrandSlabCore / deleteBrandSlabCore", () => {
 });
 
 describe("getAgencyEarningsCore", () => {
+  it("normalises a bare YYYY-MM input (no day component) correctly", async () => {
+    // Regression guard: monthStart used to build this via
+    // `input.slice(0, 8) + "01"`, valid only for a 10-char "YYYY-MM-DD"
+    // input. A 7-char "YYYY-MM" input (what a parameter named `month`
+    // invites) came out as "2026-0901" — no dash, not a parseable date.
+    const { client, queueResponse } = createMockSupabase();
+    queueEarnings(queueResponse);
+    const result = await getAgencyEarningsCore({ month: "2026-09" }, ctx(client));
+    expect(result.month).toBe("2026-09-01");
+  });
+
   it("refuses to report zeros when a source query failed", async () => {
     // Regression: all four parallel reads were taken as `.data ?? []` with the
     // error discarded, so a failure looked exactly like a quiet month — zero

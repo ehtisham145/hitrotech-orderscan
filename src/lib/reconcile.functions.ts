@@ -10,8 +10,14 @@ import type { ServerContext } from "./server-context";
 
 const WRITE_ROLES = ["owner", "admin"] as const;
 
+// BUG FIX: the old formula only produces a valid date for a 10-char
+// "YYYY-MM-DD" input — a 7-char "YYYY-MM" input comes out as "2026-0901",
+// invalid. Same bug, same fix, as reliability.functions.ts /
+// month-close.server.ts / statements.functions.ts / performance.functions.ts
+// / brand.functions.ts / payouts.functions.ts.
 function monthStart(input?: string) {
-  return ((input ?? new Date().toISOString().slice(0, 8) + "01").slice(0, 8) + "01") as string;
+  const base = input ?? new Date().toISOString().slice(0, 10);
+  return base.slice(0, 7) + "-01";
 }
 
 export type LedgerRow = {
