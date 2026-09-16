@@ -196,7 +196,7 @@ export const updateNotificationPrefs = createServerFn({ method: "POST" })
     const merged = normalizePrefs({ ...normalizePrefs((current as any)?.notification_prefs), ...data });
     const { error } = await supabase
       .from("profiles")
-      .update({ notification_prefs: merged } as any)
+      .update({ notification_prefs: merged })
       .eq("id", userId);
     if (error) throw error;
     return merged;

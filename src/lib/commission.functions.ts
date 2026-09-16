@@ -70,9 +70,9 @@ export const upsertActivationType = createServerFn({ method: "POST" })
     const table = context.supabase.from("activation_types" as any);
     const { error } = data.id
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      ? await table.update(payload as any).eq("id", data.id).eq("workspace_id", wsId)
+      ? await table.update(payload).eq("id", data.id).eq("workspace_id", wsId)
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      : await table.insert(payload as any);
+      : await table.insert(payload);
     if (error) throw new Error(error.message);
     return { ok: true };
   });
@@ -148,7 +148,7 @@ export const upsertSlab = createServerFn({ method: "POST" })
     if (data.id) {
       const { id, ...rest } = data;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { error } = await context.supabase.from("commission_slabs").update(rest as any).eq("id", id);
+      const { error } = await context.supabase.from("commission_slabs").update(rest).eq("id", id);
       if (error) throw new Error(error.message);
     } else {
 
@@ -175,7 +175,7 @@ export const upsertSlab = createServerFn({ method: "POST" })
       }
       if (!workspace_id) throw new Error("No workspace context found for slab.");
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { error } = await context.supabase.from("commission_slabs").insert({ ...data, workspace_id } as any);
+      const { error } = await context.supabase.from("commission_slabs").insert({ ...data, workspace_id });
       if (error) throw new Error(error.message);
     }
     return { ok: true };
@@ -229,7 +229,7 @@ export const assignExtractionToPartner = createServerFn({ method: "POST" })
     const { error } = await context.supabase
       .from("extractions")
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      .update({ partner_id: data.partner_id, commission_month: monthStart } as any)
+      .update({ partner_id: data.partner_id, commission_month: monthStart })
       .eq("workspace_id", wsId)
       .eq("id", data.extraction_id);
     if (error) throw new Error(error.message);
@@ -239,7 +239,7 @@ export const assignExtractionToPartner = createServerFn({ method: "POST" })
       const keys = new Set<string>(((p?.match_keys as string[] | null) ?? []).map((k) => k.trim()).filter(Boolean));
       keys.add(data.add_match_key.trim());
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await context.supabase.from("partners").update({ match_keys: Array.from(keys) } as any).eq("workspace_id", wsId).eq("id", data.partner_id);
+      await context.supabase.from("partners").update({ match_keys: Array.from(keys) }).eq("workspace_id", wsId).eq("id", data.partner_id);
     }
     return { ok: true };
   });

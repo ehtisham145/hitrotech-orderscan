@@ -5,6 +5,7 @@ import { requireActiveWorkspaceId } from "./workspace-helpers";
 import { z } from "zod";
 import { startOfMonth, endOfMonth, format } from "date-fns";
 import { effectivePlanTier } from "./plan-features";
+import { omitNulls } from "./db-payload";
 import { getPlan } from "./plans";
 import { COMPENSATION_TYPES, monthlyEarnings } from "./employee-pay";
 
@@ -130,10 +131,14 @@ export const upsertEmployee = createServerFn({ method: "POST" })
       }
     }
 
+    // commission_per_activation is NOT NULL with a default; the input schema
+    // allows null for "left blank", which the constraint rejects. See omitNulls.
+    const payload = omitNulls({ ...rest, workspace_id: wsId }, ["commission_per_activation"]);
+
     if (id) {
       const { data: row, error } = await context.supabase
         .from("employees")
-        .update({ ...rest, workspace_id: wsId } as any)
+        .update(payload)
         .eq("id", id)
         .select("*")
         .single();
@@ -142,7 +147,7 @@ export const upsertEmployee = createServerFn({ method: "POST" })
     } else {
       const { data: row, error } = await context.supabase
         .from("employees")
-        .insert({ ...rest, workspace_id: wsId } as any)
+        .insert(payload)
         .select("*")
         .single();
       if (error) throw new Error(error.message);

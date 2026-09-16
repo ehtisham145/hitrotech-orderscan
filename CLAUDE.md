@@ -534,11 +534,34 @@ Sanity check: the `public` schema should list **32** tables. Note the generated
 file now starts with a `graphql_public` schema block whose `Tables` is empty, so
 a naive "first Tables block" parser reads zero — count inside `public`.
 
-**Still to do:** ~111 `as any` casts remain on update/insert *payloads* (brand,
-commission, employees, billing, notifications, partners, month-close). Each one
-is a place the typechecker is still blindfolded, and the two bugs above are what
-that tends to be hiding. Removing them is the next pass; they need looking at
-individually rather than stripping in bulk.
+**The payload casts were the next pass, and they were hiding two more.**
+Stripping the 14 `as any` casts on insert/update *payloads* produced four
+errors, all one shape: **a NOT NULL column with a default being sent `null`.**
+
+| Column | Effect |
+|---|---|
+| `employees.commission_per_activation` | Saving an employee with that field left blank failed |
+| `partners.join_date` | Saving a partner with no join date failed |
+
+Both input schemas allow `null`, because "the user left it blank" is a real
+state on the form. But `null` on such a column does not mean "use the default",
+it means "write NULL" — which the constraint rejects, so the whole write failed
+and the user got a raw database error on a field they simply left empty.
+`omitNulls` (`src/lib/db-payload.ts`) drops those keys so the default applies;
+its return type makes the keys optional and non-nullable, which is what the
+generated Insert type wants. Its key parameter is constrained to `keyof T`, so
+a mistyped column name in the list is now a compile error too.
+
+Two casts in `extract-core.server.ts` were kept and are legitimate: that update
+object is built dynamically from `EXTRACT_FIELDS`, so `Record<string, any>` is
+genuinely what it is.
+
+**Test coverage, measured:** 151 server functions across 26 files; only
+`queue.functions.ts` and `batch-actions.functions.ts` have tests. The blocker is
+structural, not effort — `mock-supabase.ts` tests a `*Core(data, context)`
+function, and only those two files expose one. Every other file wraps its logic
+directly inside `createServerFn`, where it cannot be called from a test. Adding
+coverage means splitting each handler into a testable Core first.
 
 ---
 

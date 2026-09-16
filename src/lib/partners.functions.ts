@@ -3,6 +3,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/ext-auth-middleware";
 import { assertActiveWorkspaceRole } from "./authz.server";
 import { requireActiveWorkspaceId } from "./workspace-helpers";
+import { omitNulls } from "./db-payload";
 
 const WRITE_ROLES = ["owner", "admin", "manager"] as const;
 
@@ -79,13 +80,14 @@ export const createPartner = createServerFn({ method: "POST" })
       }
     }
 
-    const payload = {
+    // join_date is NOT NULL with a default; the input type allows null for
+    // "left blank", which the constraint rejects. See omitNulls.
+    const payload = omitNulls({
       ...data,
       workspace_id: wsId,
       created_by: context.userId,
-    };
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: row, error } = await context.supabase.from("partners").insert(payload as any).select("*").single();
+    }, ["join_date"]);
+    const { data: row, error } = await context.supabase.from("partners").insert(payload).select("*").single();
     if (error) {
       if (error.code === "23505" || /partners_cnic_unique/i.test(error.message)) {
         return { ok: false as const, error: "A partner with this CNIC already exists." };
@@ -101,8 +103,10 @@ export const updatePartner = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const wsId = await assertActiveWorkspaceRole(context.supabase, context.userId, [...WRITE_ROLES]);
     const { id, ...rest } = data;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: row, error } = await context.supabase.from("partners").update(rest as any).eq("workspace_id", wsId).eq("id", id).select("*").single();
+    const { data: row, error } = await context.supabase
+      .from("partners")
+      .update(omitNulls(rest, ["join_date"]))
+      .eq("workspace_id", wsId).eq("id", id).select("*").single();
     if (error) {
       if (error.code === "23505" || /partners_cnic_unique/i.test(error.message)) {
         return { ok: false as const, error: "A partner with this CNIC already exists." };
@@ -132,7 +136,7 @@ export const addPartnerMatchKey = createServerFn({ method: "POST" })
     const keys = new Set<string>(((p?.match_keys as string[] | null) ?? []).map((k) => k.trim()).filter(Boolean));
     if (data.key.trim()) keys.add(data.key.trim());
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { error } = await context.supabase.from("partners").update({ match_keys: Array.from(keys) } as any).eq("workspace_id", wsId).eq("id", data.id);
+    const { error } = await context.supabase.from("partners").update({ match_keys: Array.from(keys) }).eq("workspace_id", wsId).eq("id", data.id);
     if (error) throw new Error(error.message);
     return { ok: true };
   });
