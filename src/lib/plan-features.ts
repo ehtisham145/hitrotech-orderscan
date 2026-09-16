@@ -78,3 +78,27 @@ export function isPlanActive(tier: PlanTier | string | null | undefined, expires
   if (!expiresAt) return true;
   return new Date(expiresAt).getTime() > Date.now();
 }
+
+/**
+ * The tier a workspace should actually be treated as right now: its paid tier
+ * while that is still in date, otherwise `free`.
+ *
+ * Use this for every limit and feature check. `isPlanActive` existed but was
+ * only ever called from the client (`use-plan-features.ts`, `PlanGate.tsx`),
+ * so an expired workspace had its UI locked while the server still handed out
+ * the paid tier's partner and employee limits — the gate looked shut and
+ * wasn't.
+ *
+ * Deliberately a read-time decision rather than a background job flipping
+ * `plan_tier` in the database: this deployment runs no cron (Inngest keys are
+ * unset on purpose, see CLAUDE.md 2.4), so a job would simply never fire. It
+ * also keeps the stored tier truthful — "they were on Pro and it lapsed" —
+ * which billing's renew-vs-upgrade proration still needs to tell those two
+ * cases apart.
+ */
+export function effectivePlanTier(
+  tier: PlanTier | string | null | undefined,
+  expiresAt: string | null | undefined,
+): PlanTier {
+  return isPlanActive(tier, expiresAt) ? ((tier ?? "free") as PlanTier) : "free";
+}

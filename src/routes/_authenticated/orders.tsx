@@ -175,13 +175,19 @@ function AllOrdersPage() {
           .order("activation_time", { ascending: false, nullsFirst: false })
           .order("created_at", { ascending: false })
           .eq("is_duplicate", false)
-          .in("status", ["success", "completed"])
           .range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1);
 
         if (batchId !== "all") q = q.eq("batch_id", batchId);
-        if (status === "review") q = q.eq("needs_review", true);
-        else if (status === "success") q = q.eq("needs_review", false).in("status", ["success", "completed"]);
-        else if (status !== "all") q = q.eq("status", status);
+        // "Extracted" (success/completed) is what this page shows by default,
+        // but that used to be pinned on every query — so the Pending and Failed
+        // options could never match anything, since a row cannot be both
+        // "pending" and in (success, completed). Those two now replace the
+        // default restriction instead of being ANDed with it.
+        const EXTRACTED = ["success", "completed"];
+        if (status === "review") q = q.eq("needs_review", true).in("status", EXTRACTED);
+        else if (status === "success") q = q.eq("needs_review", false).in("status", EXTRACTED);
+        else if (status === "all") q = q.in("status", EXTRACTED);
+        else q = q.eq("status", status);
         if (network !== "all") q = q.eq("current_network", network);
         if (branch !== "all") q = q.eq("branch_name", branch);
         if (activationFrom) q = q.gte("activation_date_parsed", activationFrom);
@@ -211,11 +217,27 @@ function AllOrdersPage() {
   const total = data?.count ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
-  const networks = useMemo(() => {
-    const s = new Set<string>();
-    rows.forEach((r) => r.current_network && s.add(r.current_network));
-    return Array.from(s).sort();
-  }, [rows]);
+  // Queried, not derived from `rows`. Building this from the current page meant
+  // the dropdown only ever listed networks that happened to be on it — and once
+  // you picked one, every row matched it, so the list collapsed to that single
+  // option and there was no way to switch to another network without clearing
+  // the filter first. Same shape as branchOptions/storeOptions above.
+  const { data: networkOptions } = useQuery({
+    queryKey: ["orders-network-options"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("extractions")
+        .select("current_network")
+        .not("current_network", "is", null)
+        .neq("current_network", "")
+        .limit(2000);
+      if (error) throw error;
+      const s = new Set<string>();
+      (data ?? []).forEach((r) => r.current_network && s.add(r.current_network as string));
+      return Array.from(s).sort();
+    },
+  });
+  const networks = networkOptions ?? [];
 
   const hasFilters = search || batchId !== "all" || status !== "all" || network !== "all" || branch !== "all" || activationFrom || activationTo || storeFilter;
 
@@ -234,8 +256,13 @@ function AllOrdersPage() {
 
 
 
+  // Branch and store used to be missing from both halves of this, so a saved
+  // view silently dropped them: you filtered to one branch, saved it, reloaded
+  // it later and got every branch back with no indication anything was lost.
+  // `store` lives in the URL rather than in state, so it is restored through
+  // navigate() the same way the Store dropdown sets it.
   function currentFilters() {
-    return { search, batchId, status, network, activationFrom, activationTo };
+    return { search, batchId, status, network, branch, store: storeFilter ?? null, activationFrom, activationTo };
   }
   function applyPreset(p: OrdersPreset) {
     const f = p.filters as Partial<ReturnType<typeof currentFilters>>;
@@ -243,8 +270,10 @@ function AllOrdersPage() {
     setBatchId(typeof f.batchId === "string" ? f.batchId : "all");
     setStatus(typeof f.status === "string" ? f.status : "all");
     setNetwork(typeof f.network === "string" ? f.network : "all");
+    setBranch(typeof f.branch === "string" ? f.branch : "all");
     setActivationFrom(typeof f.activationFrom === "string" ? f.activationFrom : "");
     setActivationTo(typeof f.activationTo === "string" ? f.activationTo : "");
+    navigate({ search: { store: typeof f.store === "string" && f.store ? f.store : undefined } });
     setPage(0);
     toast.success(`Loaded "${p.name}"`);
   }
@@ -500,10 +529,10 @@ function AllOrdersPage() {
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div>
           <h1 className="text-3xl font-extrabold tracking-tight text-foreground">All Orders</h1>
-          <p className="text-sm text-slate-500/80 mt-1">Unified view of every extracted order across all batches</p>
+          <p className="text-sm text-muted-foreground mt-1">Unified view of every extracted order across all batches</p>
         </div>
         <div className="flex items-center gap-3 flex-wrap">
-          <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500/80">
+          <div className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
             {isFetching ? (
               <span className="inline-flex items-center gap-1.5"><Loader2 className="w-3 h-3 animate-spin text-primary" /> Loading…</span>
             ) : (
@@ -539,9 +568,9 @@ function AllOrdersPage() {
 
 
 
-      <Card className="rounded-2xl border-slate-200/60 shadow-sm">
+      <Card className="rounded-2xl border-border shadow-sm">
         <CardHeader className="pb-3">
-          <CardTitle className="text-[10px] font-bold uppercase tracking-wider text-slate-500/80 flex items-center gap-2">
+          <CardTitle className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
             <Filter className="w-4 h-4" /> Filters
           </CardTitle>
         </CardHeader>
@@ -641,8 +670,8 @@ function AllOrdersPage() {
         </CardContent>
 
         <CardContent className="border-t pt-3 flex flex-wrap items-center gap-2">
-          <BookmarkPlus className="w-3.5 h-3.5 text-slate-400" />
-          <span className="text-[10px] font-bold text-slate-500/80 uppercase tracking-wider">Saved views</span>
+          <BookmarkPlus className="w-3.5 h-3.5 text-muted-foreground" />
+          <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Saved views</span>
           {(presets ?? []).length === 0 && (
             <span className="text-xs text-muted-foreground">— none yet</span>
           )}
@@ -682,7 +711,7 @@ function AllOrdersPage() {
         </CardContent>
       </Card>
 
-      <Card className="rounded-2xl border-slate-200/60 shadow-sm overflow-hidden">
+      <Card className="rounded-2xl border-border shadow-sm overflow-hidden">
         <CardContent className="p-0 overflow-x-auto">
           {rows.length === 0 && isFetching && !data ? (
             <div className="p-4 space-y-2">
@@ -707,7 +736,7 @@ function AllOrdersPage() {
             )
           ) : (
             <table className="w-full text-[11px] min-w-[1400px] border-collapse">
-              <thead className="bg-slate-50/80 text-[11px] uppercase tracking-wider text-slate-500/80 font-bold border-b border-slate-200/60">
+              <thead className="bg-muted/50 text-[11px] uppercase tracking-wider text-muted-foreground font-bold border-b border-border">
                 <tr>
                   <th className="p-3 w-8">
                     <Checkbox
@@ -732,7 +761,7 @@ function AllOrdersPage() {
                     <tr
                       key={r.id}
                       data-cursor={isCursor ? "true" : undefined}
-                      className={`border-t border-slate-100 hover:bg-slate-50/30 transition-colors ${isSelected ? "bg-primary/5" : ""} ${isCursor ? "bg-slate-50 outline outline-2 outline-primary/20 -outline-offset-2" : ""}`}
+                      className={`border-t border-border hover:bg-muted/40 transition-colors ${isSelected ? "bg-primary/5" : ""} ${isCursor ? "bg-muted/60 outline outline-2 outline-primary/20 -outline-offset-2" : ""}`}
                     >
                       <td className="p-3">
                         <Checkbox
@@ -764,7 +793,7 @@ function AllOrdersPage() {
                                 placeholder={FIELD_LABELS[c]}
                               />
                             ) : (
-                              val || <span className="text-slate-300">—</span>
+                              val || <span className="text-muted-foreground/50">—</span>
                             )}
                           </td>
                         );
@@ -790,7 +819,7 @@ function AllOrdersPage() {
 
       {total > PAGE_SIZE && (
         <div className="flex items-center justify-between">
-          <div className="text-[11px] font-bold uppercase tracking-wider text-slate-500/80">
+          <div className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
             Page {page + 1} of {totalPages} · {rows.length} of {total.toLocaleString()} rows
           </div>
           <div className="flex gap-2">

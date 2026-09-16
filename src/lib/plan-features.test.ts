@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { planAllows, minTierFor, isPlanActive, type FeatureKey } from "./plan-features";
+import { planAllows, minTierFor, isPlanActive, effectivePlanTier, type FeatureKey } from "./plan-features";
 
 describe("planAllows", () => {
   it("free plan gets the baseline features only", () => {
@@ -63,5 +63,37 @@ describe("isPlanActive", () => {
   it("a paid plan with a past expiry is not active", () => {
     const past = new Date(Date.now() - 86_400_000).toISOString();
     expect(isPlanActive("pro", past)).toBe(false);
+  });
+});
+
+describe("effectivePlanTier", () => {
+  const past = new Date(Date.now() - 86_400_000).toISOString();
+  const future = new Date(Date.now() + 86_400_000).toISOString();
+
+  it("keeps a paid tier while it is still in date", () => {
+    expect(effectivePlanTier("pro", future)).toBe("pro");
+    expect(effectivePlanTier("starter", future)).toBe("starter");
+  });
+
+  it("falls back to free once the plan has expired", () => {
+    expect(effectivePlanTier("pro", past)).toBe("free");
+    expect(effectivePlanTier("enterprise", past)).toBe("free");
+  });
+
+  it("treats a paid tier with no expiry as still active", () => {
+    expect(effectivePlanTier("pro", null)).toBe("pro");
+  });
+
+  it("free stays free whatever the expiry says", () => {
+    expect(effectivePlanTier("free", past)).toBe("free");
+    expect(effectivePlanTier(null, past)).toBe("free");
+    expect(effectivePlanTier(undefined, undefined)).toBe("free");
+  });
+
+  it("an expired workspace loses the features its stored tier would allow", () => {
+    // The actual regression: the stored tier still says "pro", so a server
+    // check reading plan_tier straight off the row kept handing out Pro.
+    expect(planAllows("pro", "payouts")).toBe(true);
+    expect(planAllows(effectivePlanTier("pro", past), "payouts")).toBe(false);
   });
 });

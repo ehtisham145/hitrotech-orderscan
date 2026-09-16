@@ -4,6 +4,7 @@ import { assertActiveWorkspaceRole } from "./authz.server";
 import { requireActiveWorkspaceId } from "./workspace-helpers";
 import { z } from "zod";
 import { startOfMonth, endOfMonth, format } from "date-fns";
+import { effectivePlanTier } from "./plan-features";
 import { getPlan } from "./plans";
 import { COMPENSATION_TYPES, monthlyEarnings } from "./employee-pay";
 
@@ -25,18 +26,21 @@ export const getEmployeeUsage = createServerFn({ method: "GET" })
 
     const { data: ws, error: wsError } = await context.supabase
       .from("workspaces")
-      .select("plan_tier")
+      .select("plan_tier, plan_expires_at")
       .eq("id", wsId)
       .single();
 
     if (wsError) throw wsError;
 
-    const plan = getPlan(ws?.plan_tier);
+    // An expired plan reverts to free for every limit check — see
+    // effectivePlanTier's note on why this is read-time.
+    const tier = effectivePlanTier(ws?.plan_tier, ws?.plan_expires_at);
+    const plan = getPlan(tier);
 
     return {
       used: count || 0,
       limit: plan.employeeLimit,
-      planTier: ws?.plan_tier,
+      planTier: tier,
     };
   });
 
@@ -100,7 +104,7 @@ export const upsertEmployee = createServerFn({ method: "POST" })
     if (!id) {
       const { data: ws } = await context.supabase
         .from("workspaces")
-        .select("plan_tier")
+        .select("plan_tier, plan_expires_at")
         .eq("id", wsId)
         .single();
       
@@ -111,7 +115,7 @@ export const upsertEmployee = createServerFn({ method: "POST" })
         .eq("role", "super_admin")
         .maybeSingle();
 
-      const plan = getPlan(ws?.plan_tier);
+      const plan = getPlan(effectivePlanTier(ws?.plan_tier, ws?.plan_expires_at));
       // Skip limit check if user is a super admin
       if (plan.employeeLimit !== null && !superAdmin) {
         const { count } = await context.supabase

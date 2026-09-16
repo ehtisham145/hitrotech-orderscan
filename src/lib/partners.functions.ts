@@ -56,12 +56,16 @@ export const createPartner = createServerFn({ method: "POST" })
     // Enforce plan partner limit (super admins are exempt)
     const { data: isSuper } = await context.supabase.rpc("is_super_admin", { _user_id: context.userId });
     const { getPartnerLimit } = await import("./plans");
+    const { effectivePlanTier } = await import("./plan-features");
     const { data: ws } = await context.supabase
       .from("workspaces")
-      .select("plan_tier")
+      .select("plan_tier, plan_expires_at")
       .eq("id", wsId)
       .maybeSingle();
-    const limit = isSuper ? null : getPartnerLimit((ws as { plan_tier?: string } | null)?.plan_tier);
+    const wsPlan = ws as { plan_tier?: string; plan_expires_at?: string | null } | null;
+    // Expired plans fall back to the free partner limit rather than keeping the
+    // paid one the database still records.
+    const limit = isSuper ? null : getPartnerLimit(effectivePlanTier(wsPlan?.plan_tier, wsPlan?.plan_expires_at));
     if (limit !== null) {
       const { count } = await context.supabase
         .from("partners")

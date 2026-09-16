@@ -7,11 +7,11 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Store, CheckCircle2, Copy, AlertTriangle, UserCheck2, Wallet, Users, Trash2, Plus, ArrowLeft } from "lucide-react";
+import { Store, CheckCircle2, Copy, AlertTriangle, UserCheck2, Wallet, Users, Trash2, Pencil, Plus, ArrowLeft } from "lucide-react";
 import { format } from "date-fns";
 import { toast } from "sonner";
 import { getStorePerformance } from "@/lib/performance.functions";
-import { listStores, createStore, deleteStore } from "@/lib/stores.functions";
+import { listStores, createStore, updateStore, deleteStore } from "@/lib/stores.functions";
 import { EmptyState } from "@/components/EmptyState";
 import { requireWorkspaceRole } from "@/lib/route-guards";
 import {
@@ -24,6 +24,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 
 export const Route = createFileRoute("/_authenticated/admin/stores")({
@@ -169,11 +170,16 @@ function ManageStoresCard({ returnTo }: { returnTo?: string }) {
   const navigate = useNavigate();
   const fetchStores = useServerFn(listStores);
   const doCreate = useServerFn(createStore);
+  const doUpdate = useServerFn(updateStore);
   const doDelete = useServerFn(deleteStore);
   const { data: rows, isLoading } = useQuery({ queryKey: ["stores"], queryFn: () => fetchStores() });
   const [code, setCode] = useState("");
   const [label, setLabel] = useState("");
   const [pendingDelete, setPendingDelete] = useState<{ id: string; code: string } | null>(null);
+  // The store being edited, plus its in-progress values. Held together so
+  // closing the dialog throws the draft away rather than leaking it into the
+  // next edit.
+  const [editing, setEditing] = useState<{ id: string; code: string; label: string } | null>(null);
 
 
   const createM = useMutation({
@@ -185,6 +191,7 @@ function ManageStoresCard({ returnTo }: { returnTo?: string }) {
     onSuccess: () => {
       setCode(""); setLabel("");
       qc.invalidateQueries({ queryKey: ["stores"] });
+      qc.invalidateQueries({ queryKey: ["orders-store-options"] });
       toast.success("Store added");
       if (returnTo) navigate({ to: returnTo });
     },
@@ -194,10 +201,28 @@ function ManageStoresCard({ returnTo }: { returnTo?: string }) {
       toast.error(e.message || "Failed to add store");
     },
   });
+  const updateM = useMutation({
+    mutationFn: async () => {
+      if (!editing) throw new Error("Nothing to save");
+      const trimmedCode = editing.code.trim();
+      if (!trimmedCode) throw new Error("Store code is required");
+      return doUpdate({ data: { id: editing.id, code: trimmedCode, label: editing.label.trim() || null } });
+    },
+    onSuccess: () => {
+      setEditing(null);
+      qc.invalidateQueries({ queryKey: ["stores"] });
+      // Store IDs feed the All Orders filter, so its cached option list goes
+      // stale the moment a code changes.
+      qc.invalidateQueries({ queryKey: ["orders-store-options"] });
+      toast.success("Store updated");
+    },
+    onError: (e: Error) => toast.error(e.message || "Failed to update store"),
+  });
   const deleteM = useMutation({
     mutationFn: async (id: string) => doDelete({ data: { id } }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["stores"] });
+      qc.invalidateQueries({ queryKey: ["orders-store-options"] });
       toast.success("Store removed");
     },
     onError: (e: Error) => toast.error(e.message),
@@ -225,8 +250,8 @@ function ManageStoresCard({ returnTo }: { returnTo?: string }) {
             />
           </div>
           <div className="grow min-w-48">
-            <Label htmlFor="store-label">Label (optional)</Label>
-            <Input id="store-label" placeholder="e.g. Main Branch" value={label} onChange={(e) => setLabel(e.target.value)} />
+            <Label htmlFor="store-label">Display name (optional)</Label>
+            <Input id="store-label" placeholder="Shown beside the code, e.g. Main Branch" value={label} onChange={(e) => setLabel(e.target.value)} />
           </div>
           <Button type="submit" disabled={createM.isPending}>
             <Plus className="w-4 h-4 mr-1" /> {createM.isPending ? "Adding…" : "Add store"}
@@ -256,7 +281,16 @@ function ManageStoresCard({ returnTo }: { returnTo?: string }) {
                 </button>
                 <button
                   type="button"
-                  className="ml-1 p-1 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                  className="ml-1 p-1 rounded text-muted-foreground hover:text-primary hover:bg-primary/10"
+                  onClick={() => setEditing({ id: s.id, code: s.code, label: s.label ?? "" })}
+                  aria-label={`Edit ${s.code}`}
+                  title={`Edit ${s.code}`}
+                >
+                  <Pencil className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  type="button"
+                  className="p-1 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10"
                   onClick={() => setPendingDelete({ id: s.id, code: s.code })}
                   aria-label={`Remove ${s.code}`}
                 >
@@ -268,6 +302,48 @@ function ManageStoresCard({ returnTo }: { returnTo?: string }) {
 
         )}
       </CardContent>
+      <Dialog open={!!editing} onOpenChange={(o) => { if (!o) setEditing(null); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Edit store</DialogTitle>
+            <DialogDescription>
+              Changing the code only renames it in this list. Orders already saved keep the
+              store ID they were extracted with.
+            </DialogDescription>
+          </DialogHeader>
+          <form
+            className="space-y-4"
+            onSubmit={(e) => { e.preventDefault(); updateM.mutate(); }}
+          >
+            <div>
+              <Label htmlFor="edit-store-code">Store code</Label>
+              <Input
+                id="edit-store-code"
+                value={editing?.code ?? ""}
+                onChange={(e) => setEditing((p) => (p ? { ...p, code: e.target.value } : p))}
+                maxLength={32}
+                autoFocus
+              />
+            </div>
+            <div>
+              <Label htmlFor="edit-store-label">Display name (optional)</Label>
+              <Input
+                id="edit-store-label"
+                placeholder="Shown beside the code, e.g. Main Branch"
+                value={editing?.label ?? ""}
+                onChange={(e) => setEditing((p) => (p ? { ...p, label: e.target.value } : p))}
+              />
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button type="button" variant="outline" onClick={() => setEditing(null)}>Cancel</Button>
+              <Button type="submit" disabled={updateM.isPending || !editing?.code.trim()}>
+                {updateM.isPending ? "Saving…" : "Save changes"}
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+
       <AlertDialog open={!!pendingDelete} onOpenChange={(o) => !o && setPendingDelete(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
