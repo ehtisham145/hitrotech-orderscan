@@ -1,9 +1,9 @@
 # Test coverage — what is done, what is left
 
-Status at commit `86a4dfa`, 16 September 2026. **342 tests passing** (314 vitest
+Status at commit `b325ea8`, 16 September 2026. **544 tests passing** (516 vitest
 + 28 pytest), `tsc` clean.
 
-**65 of 120 server functions covered** — 10 of 25 files.
+**112 of 120 server functions covered** — 19 of 25 files.
 
 > An earlier note in this project said "151 server functions". That counted every
 > occurrence of `createServerFn`, including import lines. Counting
@@ -58,22 +58,37 @@ expect(getChain("stores").eq).toHaveBeenCalledWith("workspace_id", "ws1");
 `rpc()` is both awaitable and chainable, because some callers append
 `.maybeSingle()` to it.
 
+Passthrough query-builder methods the mock supports: `select insert update
+delete upsert eq neq in order limit range gte lte gt lt is not contains single
+maybeSingle`. Extend the list in `mock-supabase.ts` if a covered function uses
+something not on it — `range()` and `contains()` were added this round when
+`notifications`/`reliability` needed them.
+
 ---
 
-## Covered — 10 files, 65 endpoints, 190 tests
+## Covered — 19 files, 112 endpoints, 428 tests
 
 | File | Endpoints | Tests |
 |---|---:|---:|
 | `billing.functions.ts` | 13 | 30 |
 | `workspace-members.functions.ts` | 11 | 20 |
 | `commission.functions.ts` | 10 | 29 |
+| `employees.functions.ts` | 12 | 45 |
 | `brand.functions.ts` | 9 | 22 |
+| `reliability.functions.ts` | 9 | 32 |
 | `reconcile.functions.ts` | 6 | 18 |
+| `partners.functions.ts` | 6 | 25 |
+| `workspace.functions.ts` | 6 | 40 |
 | `payouts.functions.ts` | 5 | 16 |
+| `notifications.functions.ts` | 5 | 18 |
 | `stores.functions.ts` | 4 | 18 |
+| `month-close.functions.ts` | 4 | 17 |
 | `admin-recovery.functions.ts` | 3 | 20 |
 | `queue.functions.ts` | 3 | 12 |
+| `statements.functions.ts` | 2 | 10 |
+| `portal.functions.ts` | 2 | 7 |
 | `batch-actions.functions.ts` | 1 | 5 |
+| `admin-users.functions.ts` | 1 | 7 |
 
 A further 124 tests cover pure functions: `plans` (23), `template-extract` (27),
 `slab-validation` (15), `plan-features` (15), `brand-slabs` (15), `format` (14),
@@ -81,21 +96,12 @@ A further 124 tests cover pure functions: `plans` (23), `template-extract` (27),
 
 ---
 
-## Remaining — 15 files, 55 endpoints
+## Remaining — 6 files, 8 endpoints
 
-Ordered by what a mistake costs.
+Small surface left, all read-mostly dashboard/reporting endpoints.
 
 | File | Endpoints | Why it matters |
 |---|---:|---|
-| `employees.functions.ts` | 12 | Salary, advances, seat limits. Two bugs already found here. |
-| `partners.functions.ts` | 6 | Partner records, plan partner limits. One bug already found. |
-| `month-close.functions.ts` | 4 | Locks a month; interacts with the DB trigger in CLAUDE.md §2.10. |
-| `workspace.functions.ts` | 6 | Creating, renaming, deleting a workspace. |
-| `admin-users.functions.ts` | 1 | Super-admin surface. |
-| `reliability.functions.ts` | 9 | Report generation and delivery. |
-| `notifications.functions.ts` | 5 | In-app alerts and preferences. |
-| `statements.functions.ts` | 2 | Partner statements. |
-| `portal.functions.ts` | 2 | What a partner sees of their own data. |
 | `performance.functions.ts` | 2 | Store/partner performance figures. |
 | `usage.functions.ts` | 2 | Plan usage counters. |
 | `kpis.functions.ts` | 1 | Dashboard tiles. |
@@ -110,31 +116,63 @@ component — `vitest.config.ts` sets `environment: "node"`, so there is no DOM.
 
 ## What to test for
 
-33 problems were found across the covered files, clustering into five shapes.
-Write the test for the shape, not the happy path.
+This round (employees, partners, month-close, workspace, admin-users,
+reliability, notifications, statements, portal) found real bugs of every one of
+the five shapes below, plus one new one worth adding as its own category:
 
 1. **Missing workspace filter.** Every query and write needs
-   `.eq("workspace_id", wsId)`. Assert via `getChain(table).eq`. *Found 7×.*
+   `.eq("workspace_id", wsId)`. Assert via `getChain(table).eq`.
+   `reliability.functions.ts` had three outright cross-tenant leaks this way
+   (`listAuditLogs`, `listMonthLocks`, `isMonthLocked` — no workspace filter
+   at all, not even a missing check on an otherwise-scoped query).
 2. **Write by id alone.** `.eq("id", ...)` with no workspace lets one tenant
-   touch another's row. *Found 5×.*
+   touch another's row. `employees.functions.ts`'s `upsertEmployeeAdvance`
+   update path was the worst instance found all session — it also *wrote*
+   `workspace_id: wsId` into the payload while matching only by id, so a
+   caller could reassign another workspace's row into their own tenant.
 3. **Unchecked write result.** `.select("id")` and treat zero rows as failure,
-   or a refused write reports success. *Found 5×.*
+   or a refused write reports success. `workspace.functions.ts`'s
+   `reopenMonth` was the worst: none of its three writes checked their error
+   at all, so a failed reopen could still return `{ ok: true }`.
 4. **Discarded query error.** `const { data } = await ...` without touching
-   `error` turns a failure into an empty result — on a money report, a confident
-   zero. *Found 4×.*
+   `error` turns a failure into an empty result — on a money report, a
+   confident zero. By far the most common shape this round: found in
+   `getReconciliation`, `exportMonthlyBackup`, `getPartnerStatement`,
+   `getPartnerHistory` (all real money/report endpoints), plus
+   `getActiveWorkspace`'s auto-provisioning path, `createPartner`'s
+   plan-limit precheck, `addPartnerMatchKey` (this one actively *deleted*
+   data — a failed lookup fell through to an empty key set, and the update
+   that followed overwrote the row, discarding every key it already had),
+   and several audit-log inserts (those were fixed by *logging* rather than
+   throwing, since by the time an audit write runs the real operation has
+   already succeeded — see `closeMonthNow`/`reopenMonth`/`createWorkspace`).
 5. **Missing role check.** Every write endpoint needs an `allowRole(false)`
-   test. One listing endpoint had no check at all.
+   test. `workspace.functions.ts`'s `renameWorkspace` had *no* authorization
+   check at all — not even a workspace-membership check — despite its own
+   doc comment saying "Owner or admin only."
+6. **New: copy-pasted date-normalization bug.** The same buggy `monthStart`
+   formula (`input.slice(0, 8) + "01"`) was found independently in three
+   different files — `reliability.functions.ts`, `month-close.server.ts`,
+   `statements.functions.ts`. It only produces a valid date for a 10-char
+   "YYYY-MM-DD" input; a 7-char "YYYY-MM" input (what `<input type="month">`
+   actually sends) comes out as `"2026-0901"` — no separating dash, not
+   parseable at all. All three fixed the same way: take the `"YYYY-MM"`
+   prefix and append `"-01"` explicitly, which is correct regardless of
+   input length. Worth grepping for `.slice(0, 8)` near a month-handling
+   function if touching date logic elsewhere in this codebase.
 
 **Per-endpoint checklist:** refusal (`allowRole(false)`) · workspace scoping ·
 row from another workspace reported not silently ok · `queueError` surfaces ·
-edge values (`null`, `0`, empty list, divide-by-zero).
+edge values (`null`, `0`, empty list, divide-by-zero) · for money/report
+endpoints specifically, every `Promise.all` branch's `.error` checked, not
+just the first one.
 
 ---
 
 ## Running
 
 ```bash
-npm test                                   # vitest — 314
+npm test                                   # vitest — 516
 npx vitest run src/lib/stores.functions.test.ts
 npx tsc --noEmit -p tsconfig.json          # must stay clean
 
@@ -150,7 +188,7 @@ Windows. The suite never needs it.
 
 ---
 
-## Two traps that cost real time
+## Traps that cost real time
 
 - **A scripted edit that `sys.exit()`s on a failed match before saving silently
   discards the edits that already matched.** One fix was reported as applied and
@@ -158,3 +196,12 @@ Windows. The suite never needs it.
   match, then write once.
 - **Check `tsc` before committing, not after.** One commit went out with two type
   errors in a test file.
+- **A test asserting on "the current month" must compute it the same way the
+  code does (`new Date()` at call time), not hardcode a date from whenever the
+  test was written.** `getPartnerHistoryCore`'s first test failed exactly this
+  way — the fixture assumed the session's narrative date, not the real system
+  clock the test suite actually runs under.
+- **A `Promise.all([a, b, c])` mock needs every branch queued, even the ones
+  the test isn't "about."** Forgetting the second/third table's queued
+  response surfaces as a confusing "no queued response" error instead of the
+  assertion you meant to write.
