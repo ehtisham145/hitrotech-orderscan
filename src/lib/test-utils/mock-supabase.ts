@@ -18,6 +18,7 @@ export type MockResult<T = unknown> = { data: T; error: { message: string } | nu
 export function createMockSupabase() {
   const queues = new Map<string, MockResult[]>();
   const chainsByTable = new Map<string, Record<string, unknown>[]>();
+  const rpcQueues = new Map<string, MockResult[]>();
 
   function queueResponse<T>(table: string, result: MockResult<T>) {
     const q = queues.get(table) ?? [];
@@ -69,10 +70,37 @@ export function createMockSupabase() {
     return c as Record<string, ReturnType<typeof vi.fn>>;
   }
 
+  /**
+   * Queue a result for supabase.rpc(name, ...). Needed by almost every server
+   * function: assertActiveWorkspaceRole calls rpc("has_workspace_role"), so a
+   * test that does not queue it cannot get past the authorization check.
+   */
+  function queueRpc<T>(fn: string, result: MockResult<T>) {
+    const q = rpcQueues.get(fn) ?? [];
+    q.push(result as MockResult);
+    rpcQueues.set(fn, q);
+  }
+
+  /** Shorthand: the caller does / does not hold one of the required roles. */
+  function allowRole(allowed = true) {
+    queueRpc("has_workspace_role", { data: allowed, error: null });
+  }
+
+  const rpc = vi.fn((fn: string, _args?: unknown) => {
+    const q = rpcQueues.get(fn);
+    if (!q || q.length === 0) {
+      throw new Error(
+        `mock-supabase: no queued response for .rpc("${fn}") — call queueRpc("${fn}", ...) or allowRole() before running this test.`,
+      );
+    }
+    return Promise.resolve(q.shift()!);
+  });
+
   const createSignedUploadUrl = vi.fn();
 
   const client = {
     from: (table: string) => makeChain(table),
+    rpc,
     storage: {
       from: (_bucket: string) => ({ createSignedUploadUrl }),
     },
@@ -85,7 +113,10 @@ export function createMockSupabase() {
     client,
     queueResponse,
     queueError,
+    queueRpc,
+    allowRole,
     getChain,
+    rpc,
     createSignedUploadUrl,
   };
 }
